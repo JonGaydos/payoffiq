@@ -8,6 +8,8 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+set -e  # Exit immediately on any error
+
 echo "==> Setting remote..."
 git remote remove origin 2>/dev/null || true
 git remote add origin "https://JonGaydos:${TOKEN}@github.com/JonGaydos/MortgageIQ.git"
@@ -71,7 +73,7 @@ EOF
 echo "==> Staging and pushing..."
 git add .
 git branch -M master
-git commit -m "Setup: add workflow and configure remote" 2>/dev/null || git commit --allow-empty -m "Setup: reconfigure remote"
+git diff --cached --quiet && echo "(nothing new to stage)" || git commit -m "Setup: add workflow and configure remote"
 git push origin master --force
 
 echo ""
