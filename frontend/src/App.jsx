@@ -22,29 +22,29 @@ const fmtMonths = (m) => {
 const s = {
   app: { display: 'flex', minHeight: '100vh' },
   sidebar: {
-    width: 240, background: 'var(--ink)', color: 'var(--cream)', display: 'flex',
+    width: 240, background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', display: 'flex',
     flexDirection: 'column', padding: '0 0 24px', flexShrink: 0,
     position: 'sticky', top: 0, height: '100vh', overflow: 'auto'
   },
   logo: { padding: '28px 24px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: 8 },
   logoTitle: { fontSize: 22, color: 'var(--gold-light)', fontFamily: "'DM Serif Display', serif" },
-  logoSub: { fontSize: 11, color: 'var(--warm-gray)', marginTop: 2, letterSpacing: '0.08em', textTransform: 'uppercase' },
-  navSection: { padding: '8px 12px', fontSize: 11, color: 'var(--warm-gray)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 },
+  logoSub: { fontSize: 11, color: 'rgba(255,255,255,0.4)', marginTop: 2, letterSpacing: '0.08em', textTransform: 'uppercase' },
+  navSection: { padding: '8px 12px', fontSize: 11, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 8 },
   navItem: (active) => ({
     padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 10,
     cursor: 'pointer', borderRadius: 8, margin: '1px 8px',
     background: active ? 'rgba(201,151,58,0.15)' : 'transparent',
-    color: active ? 'var(--gold-light)' : 'rgba(250,247,242,0.7)',
+    color: active ? 'var(--gold-light)' : 'rgba(255,255,255,0.65)',
     fontSize: 14, fontWeight: active ? 600 : 400,
     borderLeft: active ? '3px solid var(--gold)' : '3px solid transparent',
   }),
   loanPicker: { padding: '12px', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 'auto' },
-  loanPickerLabel: { fontSize: 11, color: 'var(--warm-gray)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 },
+  loanPickerLabel: { fontSize: 11, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 },
   select: {
     width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.07)',
-    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'var(--cream)', fontSize: 13
+    border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, color: 'var(--sidebar-text)', fontSize: 13
   },
-  main: { flex: 1, padding: '32px 40px', overflow: 'auto' },
+  main: { flex: 1, padding: '32px 40px', overflow: 'auto', background: 'var(--cream)' },
   pageHeader: { marginBottom: 28 },
   pageTitle: { fontSize: 28, color: 'var(--ink)' },
   pageSub: { color: 'var(--warm-gray)', marginTop: 4, fontSize: 14 },
@@ -59,7 +59,7 @@ const s = {
     borderTop: `3px solid ${color || 'var(--gold)'}`,
   }),
   statLabel: { fontSize: 12, color: 'var(--warm-gray)', textTransform: 'uppercase', letterSpacing: '0.08em' },
-  statValue: { fontSize: 26, fontFamily: "'DM Serif Display', serif", marginTop: 4 },
+  statValue: { fontSize: 26, fontFamily: "'DM Serif Display', serif", marginTop: 4, color: 'var(--ink)' },
   statSub: { fontSize: 12, color: 'var(--warm-gray)', marginTop: 4 },
   sectionTitle: { fontSize: 18, marginBottom: 16, color: 'var(--ink)' },
   btn: (variant) => ({
@@ -82,7 +82,7 @@ const s = {
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
   th: { padding: '10px 12px', textAlign: 'left', borderBottom: '2px solid var(--border)', color: 'var(--warm-gray)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' },
-  td: { padding: '10px 12px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle' },
+  td: { padding: '10px 12px', borderBottom: '1px solid var(--border)', verticalAlign: 'middle', color: 'var(--ink)' },
   badge: (color) => ({
     display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: 11,
     background: color === 'green' ? '#E8F5E9' : color === 'orange' ? '#FFF3E0' : color === 'blue' ? '#E3F2FD' : '#F3E5F5',
@@ -258,7 +258,7 @@ function PaymentForm({ loanId, initial = {}, onSave, onCancel }) {
         <select
           value={provider}
           onChange={(e) => setProvider(e.target.value)}
-          style={{ flex: 1, padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--border)', background: 'white', color: 'var(--ink)', cursor: 'pointer', outline: 'none' }}
+          style={{ flex: 1, padding: '6px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--ink)', cursor: 'pointer', outline: 'none' }}
         >
           {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
@@ -316,7 +316,7 @@ function Dashboard({ selectedLoan, analytics, payments }) {
         </div>
         <div style={{ ...s.card, textAlign: 'center', padding: '60px 40px' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🏠</div>
-          <h2 style={{ fontFamily: "'DM Serif Display', serif", marginBottom: 8 }}>No Loan Selected</h2>
+          <h2 style={{ fontFamily: "'DM Serif Display', serif", marginBottom: 8, color: 'var(--ink)' }}>No Loan Selected</h2>
           <p style={{ color: 'var(--warm-gray)' }}>Go to Manage Loans in the sidebar to add your first mortgage</p>
         </div>
       </div>
@@ -345,7 +345,7 @@ function Dashboard({ selectedLoan, analytics, payments }) {
 
       <div style={{ ...s.card, marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>Loan Payoff Progress</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>Loan Payoff Progress</span>
           <span style={{ fontSize: 22, fontFamily: "'DM Serif Display', serif", color: 'var(--gold)' }}>{progress.toFixed(1)}%</span>
         </div>
         <div style={{ height: 12, borderRadius: 6, background: 'var(--surface)', overflow: 'hidden' }}>
@@ -387,9 +387,9 @@ function Dashboard({ selectedLoan, analytics, payments }) {
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v) => fmt(v)} />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--warm-gray)' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--warm-gray)' }} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
                 <Legend />
                 <Bar dataKey="principal" fill="var(--gold)" name="Principal" stackId="a" />
                 <Bar dataKey="interest" fill="var(--terracotta)" name="Interest" stackId="a" />
@@ -409,9 +409,9 @@ function Dashboard({ selectedLoan, analytics, payments }) {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v) => fmt(v)} />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'var(--warm-gray)' }} />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--warm-gray)' }} />
+                <Tooltip formatter={(v) => fmt(v)} contentStyle={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--ink)' }} />
                 <Area type="monotone" dataKey="balance" stroke="var(--gold)" fill="url(#balGrad)" name="Balance" />
               </AreaChart>
             </ResponsiveContainer>
@@ -432,7 +432,7 @@ function Dashboard({ selectedLoan, analytics, payments }) {
           ].map(([l, v]) => (
             <div key={l} style={{ padding: '12px', background: 'var(--surface)', borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: 'var(--warm-gray)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{l}</div>
-              <div style={{ fontSize: 18, fontFamily: "'DM Serif Display', serif", marginTop: 2 }}>{v}</div>
+              <div style={{ fontSize: 18, fontFamily: "'DM Serif Display', serif", marginTop: 2, color: 'var(--ink)' }}>{v}</div>
             </div>
           ))}
         </div>
@@ -533,7 +533,7 @@ function PaymentsView({ loan, payments, onRefresh }) {
 
 // ─── CALCULATOR ───────────────────────────────────────────────────────────────
 
-function ScenarioResult({ label, color, scenario, savings, baseline }) {
+function ScenarioResult({ label, color, scenario, savings }) {
   if (!scenario) return null;
   const isBase = !savings;
   return (
@@ -578,10 +578,7 @@ function Calculator({ loan }) {
   const calculate = async () => {
     const r = await fetch(`${API}/loans/${loan.id}/calculate-payoff`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        extra_monthly: parseFloat(extraMonthly) || 0,
-        lump_sum: parseFloat(lumpSum) || 0,
-      })
+      body: JSON.stringify({ extra_monthly: parseFloat(extraMonthly) || 0, lump_sum: parseFloat(lumpSum) || 0 })
     });
     setResult(await r.json());
     setShowAmort(false);
@@ -622,7 +619,6 @@ function Calculator({ loan }) {
         <p style={s.pageSub}>See how extra payments affect your payoff date and total interest</p>
       </div>
 
-      {/* Input card */}
       <div style={{ ...s.card, marginBottom: 20 }}>
         <h3 style={{ ...s.sectionTitle, marginBottom: 4 }}>Enter Your Scenarios</h3>
         <p style={{ fontSize: 13, color: 'var(--warm-gray)', marginBottom: 20 }}>
@@ -630,89 +626,39 @@ function Calculator({ loan }) {
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 16, alignItems: 'flex-end' }}>
           <Field label="Extra Monthly Payment ($)">
-            <input
-              style={s.input} type="number" min="0"
-              value={extraMonthly} onChange={(e) => setExtraMonthly(e.target.value)}
-              placeholder="e.g. 200"
-            />
+            <input style={s.input} type="number" min="0" value={extraMonthly} onChange={(e) => setExtraMonthly(e.target.value)} placeholder="e.g. 200" />
           </Field>
           <Field label="One-Time Lump Sum to Principal ($)">
-            <input
-              style={s.input} type="number" min="0"
-              value={lumpSum} onChange={(e) => setLumpSum(e.target.value)}
-              placeholder="e.g. 5000"
-            />
+            <input style={s.input} type="number" min="0" value={lumpSum} onChange={(e) => setLumpSum(e.target.value)} placeholder="e.g. 5000" />
           </Field>
-          <button style={{ ...s.btn(), padding: '9px 28px', whiteSpace: 'nowrap' }} onClick={calculate}>
-            Calculate
-          </button>
+          <button style={{ ...s.btn(), padding: '9px 28px', whiteSpace: 'nowrap' }} onClick={calculate}>Calculate</button>
         </div>
         <div style={{ marginTop: 12, fontSize: 12, color: 'var(--warm-gray)' }}>
           Current balance: <strong>{fmt(loan.current_balance || loan.original_amount)}</strong> · Monthly payment: <strong>{fmt(loan.monthly_payment)}</strong> · Rate: <strong>{loan.interest_rate}%</strong>
         </div>
       </div>
 
-      {/* Results */}
       {result && (
         <div style={{ ...s.card, marginBottom: 20 }}>
           <h3 style={{ ...s.sectionTitle, marginBottom: 16 }}>Results</h3>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (hasMonthly ? 1 : 0) + (hasLump ? 1 : 0) + (hasMonthly && hasLump ? 1 : 0)}, 1fr)`, gap: 12 }}>
-            <ScenarioResult
-              label="Baseline (no changes)"
-              scenario={result.base}
-            />
-            {hasMonthly && (
-              <ScenarioResult
-                label={`+${fmt(extraMonthly)}/mo extra`}
-                color="var(--sage)"
-                scenario={result.monthly}
-                savings={result.savings.monthly}
-              />
-            )}
-            {hasLump && (
-              <ScenarioResult
-                label={`${fmt(lumpSum)} lump sum now`}
-                color="var(--gold)"
-                scenario={result.lump}
-                savings={result.savings.lump}
-              />
-            )}
-            {hasMonthly && hasLump && (
-              <ScenarioResult
-                label={`Lump sum + ${fmt(extraMonthly)}/mo`}
-                color="var(--terracotta)"
-                scenario={result.combined}
-                savings={result.savings.combined}
-              />
-            )}
+            <ScenarioResult label="Baseline (no changes)" scenario={result.base} />
+            {hasMonthly && <ScenarioResult label={`+${fmt(extraMonthly)}/mo extra`} color="var(--sage)" scenario={result.monthly} savings={result.savings.monthly} />}
+            {hasLump && <ScenarioResult label={`${fmt(lumpSum)} lump sum now`} color="var(--gold)" scenario={result.lump} savings={result.savings.lump} />}
+            {hasMonthly && hasLump && <ScenarioResult label={`Lump sum + ${fmt(extraMonthly)}/mo`} color="var(--terracotta)" scenario={result.combined} savings={result.savings.combined} />}
           </div>
         </div>
       )}
 
-      {/* Amortization */}
       <div style={s.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showAmort ? 16 : 0, flexWrap: 'wrap', gap: 10 }}>
           <h3 style={s.sectionTitle}>Amortization Schedule</h3>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {showAmort && (
-              <button style={s.btn('ghost')} onClick={() => setShowAmort(false)}>Hide</button>
-            )}
+            {showAmort && <button style={s.btn('ghost')} onClick={() => setShowAmort(false)}>Hide</button>}
             <button style={s.btn('outline')} onClick={() => buildAmort('base')}>Baseline</button>
-            {result && hasMonthly && (
-              <button style={{ ...s.btn('outline'), borderColor: 'var(--sage)', color: 'var(--sage)' }} onClick={() => buildAmort('monthly')}>
-                +{fmt(extraMonthly)}/mo
-              </button>
-            )}
-            {result && hasLump && (
-              <button style={{ ...s.btn('outline'), borderColor: 'var(--gold)', color: 'var(--gold)' }} onClick={() => buildAmort('lump')}>
-                Lump Sum
-              </button>
-            )}
-            {result && hasMonthly && hasLump && (
-              <button style={{ ...s.btn('outline'), borderColor: 'var(--terracotta)', color: 'var(--terracotta)' }} onClick={() => buildAmort('combined')}>
-                Combined
-              </button>
-            )}
+            {result && hasMonthly && <button style={{ ...s.btn('outline'), borderColor: 'var(--sage)', color: 'var(--sage)' }} onClick={() => buildAmort('monthly')}>+{fmt(extraMonthly)}/mo</button>}
+            {result && hasLump && <button style={{ ...s.btn('outline'), borderColor: 'var(--gold)', color: 'var(--gold)' }} onClick={() => buildAmort('lump')}>Lump Sum</button>}
+            {result && hasMonthly && hasLump && <button style={{ ...s.btn('outline'), borderColor: 'var(--terracotta)', color: 'var(--terracotta)' }} onClick={() => buildAmort('combined')}>Combined</button>}
           </div>
         </div>
         {showAmort && (
@@ -723,9 +669,7 @@ function Calculator({ loan }) {
             <div style={{ overflowX: 'auto', maxHeight: 400 }}>
               <table style={s.table}>
                 <thead>
-                  <tr>
-                    {['Month', 'Principal', 'Interest', 'Remaining Balance'].map(h => <th key={h} style={s.th}>{h}</th>)}
-                  </tr>
+                  <tr>{['Month', 'Principal', 'Interest', 'Remaining Balance'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {amortize.map((row) => (
@@ -741,11 +685,7 @@ function Calculator({ loan }) {
             </div>
           </>
         )}
-        {!showAmort && (
-          <p style={{ fontSize: 13, color: 'var(--warm-gray)', marginTop: 8 }}>
-            Click a scenario button above to view its full month-by-month amortization table.
-          </p>
-        )}
+        {!showAmort && <p style={{ fontSize: 13, color: 'var(--warm-gray)', marginTop: 8 }}>Click a scenario button above to view its full month-by-month amortization table.</p>}
       </div>
     </div>
   );
@@ -846,9 +786,7 @@ function EscrowView({ loan }) {
         ) : (
           <table style={s.table}>
             <thead>
-              <tr>
-                {['Date', 'Type', 'Description', 'Year', 'Amount', ''].map(h => <th key={h} style={s.th}>{h}</th>)}
-              </tr>
+              <tr>{['Date', 'Type', 'Description', 'Year', 'Amount', ''].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {[...items].reverse().map(item => (
@@ -919,7 +857,7 @@ function LoansManager({ loans, onRefresh, onSelect }) {
       {loans.length === 0 && !showForm && (
         <div style={{ ...s.card, textAlign: 'center', padding: '60px' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🏡</div>
-          <h3 style={{ fontFamily: "'DM Serif Display', serif", marginBottom: 8 }}>No Loans Yet</h3>
+          <h3 style={{ fontFamily: "'DM Serif Display', serif", marginBottom: 8, color: 'var(--ink)' }}>No Loans Yet</h3>
           <p style={{ color: 'var(--warm-gray)', marginBottom: 20 }}>Add your first mortgage to start tracking</p>
           <button style={s.btn()} onClick={() => setShowForm(true)}>Add Your First Loan</button>
         </div>
@@ -928,11 +866,11 @@ function LoansManager({ loans, onRefresh, onSelect }) {
       {loans.map(loan => (
         <div key={loan.id} style={{ ...s.card, marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, marginBottom: 4 }}>{loan.name}</div>
+            <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: 20, marginBottom: 4, color: 'var(--ink)' }}>{loan.name}</div>
             <div style={{ fontSize: 13, color: 'var(--warm-gray)' }}>
               {fmt(loan.original_amount)} · {parseFloat(loan.interest_rate)}% · {parseInt(loan.loan_term_months)/12}yr · Started {fmtDate(loan.start_date)}
             </div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>
+            <div style={{ fontSize: 13, marginTop: 4, color: 'var(--ink)' }}>
               Balance: <strong>{fmt(loan.current_balance || loan.original_amount)}</strong> · Monthly: <strong>{fmt(loan.monthly_payment)}</strong>
             </div>
           </div>
@@ -947,17 +885,20 @@ function LoansManager({ loans, onRefresh, onSelect }) {
   );
 }
 
-// ─── APP ROOT ─────────────────────────────────────────────────────────────────
-
-
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 
-function Settings() {
+function Settings({ theme, setTheme }) {
   const PROVIDERS = [
     { id: 'claude_api_key',  label: 'Claude (Anthropic)',  placeholder: 'sk-ant-api03-...', link: 'https://console.anthropic.com/api-keys', linkLabel: 'Get key →' },
     { id: 'openai_api_key',  label: 'ChatGPT (OpenAI)',    placeholder: 'sk-proj-...', link: 'https://platform.openai.com/api-keys', linkLabel: 'Get key →' },
     { id: 'gemini_api_key',  label: 'Gemini (Google)',     placeholder: 'AIza...', link: 'https://aistudio.google.com/app/apikey', linkLabel: 'Get key →' },
     { id: 'copilot_api_key', label: 'Copilot (Microsoft)', placeholder: 'GitHub PAT or Azure key', link: 'https://github.com/settings/tokens', linkLabel: 'Get key →' },
+  ];
+
+  const THEMES = [
+    { id: 'light', label: '☀️ Light', desc: 'Warm cream' },
+    { id: 'dark',  label: '🌙 Dark',  desc: 'Dark navy' },
+    { id: 'slate', label: '🌊 Slate', desc: 'Cool blue' },
   ];
 
   const [keys, setKeys] = useState({ claude_api_key: '', openai_api_key: '', gemini_api_key: '', copilot_api_key: '' });
@@ -1000,19 +941,45 @@ function Settings() {
     <div>
       <div style={s.pageHeader}>
         <h1 style={s.pageTitle}>Settings</h1>
-        <p style={s.pageSub}>Manage API keys for AI-powered PDF extraction</p>
+        <p style={s.pageSub}>Appearance and API key management</p>
       </div>
+
+      {/* Theme Picker */}
+      <div style={{ ...s.card, marginBottom: 20 }}>
+        <h3 style={{ ...s.sectionTitle, marginBottom: 4 }}>Theme</h3>
+        <p style={{ fontSize: 13, color: 'var(--warm-gray)', marginBottom: 16 }}>Choose your preferred color scheme.</p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {THEMES.map(t => (
+            <div
+              key={t.id}
+              onClick={() => setTheme(t.id)}
+              style={{
+                padding: '14px 20px', borderRadius: 10, cursor: 'pointer', minWidth: 110, textAlign: 'center',
+                border: `2px solid ${theme === t.id ? 'var(--gold)' : 'var(--border)'}`,
+                background: theme === t.id ? 'rgba(201,151,58,0.08)' : 'var(--surface)',
+                transition: 'all 0.15s',
+              }}
+            >
+              <div style={{ fontSize: 20, marginBottom: 4 }}>{t.label.split(' ')[0]}</div>
+              <div style={{ fontSize: 13, fontWeight: theme === t.id ? 600 : 400, color: theme === t.id ? 'var(--gold)' : 'var(--ink)' }}>{t.label.split(' ').slice(1).join(' ')}</div>
+              <div style={{ fontSize: 11, color: 'var(--warm-gray)', marginTop: 2 }}>{t.desc}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* API Keys */}
       <div style={s.card}>
         <h3 style={{ ...s.sectionTitle, marginBottom: 4 }}>AI Provider API Keys</h3>
         <p style={{ fontSize: 13, color: 'var(--warm-gray)', marginBottom: 20 }}>
-          Keys are stored securely in your local database and never leave your server. Add keys for whichever providers you want to use — you can switch between them per upload on the payment form.
+          Keys are stored securely in your local database and never leave your server.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {PROVIDERS.map(p => (
             <div key={p.id} style={{ padding: 16, borderRadius: 10, border: `1px solid ${saved[p.id] ? 'var(--sage)' : 'var(--border)'}`, background: saved[p.id] ? 'rgba(107,153,100,0.05)' : 'var(--surface)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{p.label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--ink)' }}>{p.label}</span>
                   {saved[p.id] && <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--sage)', fontWeight: 600 }}>✓ CONFIGURED</span>}
                 </div>
                 <a href={p.link} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: 'var(--gold)', textDecoration: 'none' }}>{p.linkLabel}</a>
@@ -1036,14 +1003,14 @@ function Settings() {
         </div>
         <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
           <button style={s.btn()} onClick={save}>Save Keys</button>
-          {status && (
-            <span style={{ fontSize: 13, color: status.ok ? 'var(--sage)' : 'var(--terracotta)' }}>{status.msg}</span>
-          )}
+          {status && <span style={{ fontSize: 13, color: status.ok ? 'var(--sage)' : 'var(--terracotta)' }}>{status.msg}</span>}
         </div>
       </div>
     </div>
   );
 }
+
+// ─── APP ROOT ─────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [view, setView] = useState('dashboard');
@@ -1051,6 +1018,13 @@ export default function App() {
   const [selectedLoan, setSelectedLoan] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [payments, setPayments] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('mortgageiq-theme') || 'light');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? '' : theme);
+    localStorage.setItem('mortgageiq-theme', theme);
+  }, [theme]);
 
   const loadLoans = useCallback(async () => {
     const r = await fetch(`${API}/loans`);
@@ -1084,24 +1058,38 @@ export default function App() {
   }, []);
 
   const navItems = [
-    { id: 'dashboard', icon: '📊', label: 'Dashboard' },
-    { id: 'payments', icon: '💳', label: 'Payments' },
+    { id: 'dashboard',  icon: '📊', label: 'Dashboard' },
+    { id: 'payments',   icon: '💳', label: 'Payments' },
     { id: 'calculator', icon: '🧮', label: 'Payoff Calculator' },
-    { id: 'escrow', icon: '🏛️', label: 'Escrow Tracker' },
-    { id: 'loans', icon: '🏠', label: 'Manage Loans' },
-    { id: 'settings', icon: '⚙️', label: 'Settings' },
+    { id: 'escrow',     icon: '🏛️', label: 'Escrow Tracker' },
+    { id: 'loans',      icon: '🏠', label: 'Manage Loans' },
+    { id: 'settings',   icon: '⚙️', label: 'Settings' },
   ];
 
+  const navigate = (id) => {
+    setView(id);
+    setSidebarOpen(false);
+  };
+
   return (
-    <div style={s.app}>
-      <div style={s.sidebar}>
+    <div style={s.app} data-theme={theme === 'light' ? '' : theme}>
+      {/* Mobile hamburger */}
+      <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Toggle menu">
+        {sidebarOpen ? '✕' : '☰'}
+      </button>
+
+      {/* Overlay for mobile */}
+      <div className={`sidebar-overlay${sidebarOpen ? ' open' : ''}`} onClick={() => setSidebarOpen(false)} />
+
+      {/* Sidebar */}
+      <div className={`sidebar${sidebarOpen ? ' open' : ''}`} style={s.sidebar}>
         <div style={s.logo}>
           <div style={s.logoTitle}>MortgageIQ</div>
           <div style={s.logoSub}>Loan Manager</div>
         </div>
         <div style={s.navSection}>Navigation</div>
         {navItems.map(item => (
-          <div key={item.id} style={s.navItem(view === item.id)} onClick={() => setView(item.id)}>
+          <div key={item.id} style={s.navItem(view === item.id)} onClick={() => navigate(item.id)}>
             <span>{item.icon}</span>
             <span>{item.label}</span>
           </div>
@@ -1122,13 +1110,14 @@ export default function App() {
         </div>
       </div>
 
-      <div style={s.main}>
-        {view === 'dashboard' && <Dashboard selectedLoan={selectedLoan} analytics={analytics} payments={payments} />}
-        {view === 'payments' && <PaymentsView loan={selectedLoan} payments={payments} onRefresh={refreshData} />}
+      {/* Main content */}
+      <div className="main-content" style={s.main}>
+        {view === 'dashboard'  && <Dashboard selectedLoan={selectedLoan} analytics={analytics} payments={payments} />}
+        {view === 'payments'   && <PaymentsView loan={selectedLoan} payments={payments} onRefresh={refreshData} />}
         {view === 'calculator' && <Calculator loan={selectedLoan} />}
-        {view === 'escrow' && <EscrowView loan={selectedLoan} />}
-        {view === 'loans' && <LoansManager loans={loans} onRefresh={loadLoans} onSelect={(l) => { selectLoan(l); setView('dashboard'); }} />}
-        {view === 'settings' && <Settings />}
+        {view === 'escrow'     && <EscrowView loan={selectedLoan} />}
+        {view === 'loans'      && <LoansManager loans={loans} onRefresh={loadLoans} onSelect={(l) => { selectLoan(l); setView('dashboard'); }} />}
+        {view === 'settings'   && <Settings theme={theme} setTheme={setTheme} />}
       </div>
     </div>
   );
