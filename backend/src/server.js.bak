@@ -73,6 +73,16 @@ db.exec(`
     statement_filename TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS loan_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    loan_id INTEGER REFERENCES loans(id) ON DELETE CASCADE,
+    payment_id INTEGER REFERENCES payments(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    doc_type TEXT DEFAULT 'document',
+    description TEXT,
+    uploaded_at TEXT DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS escrow_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     loan_id INTEGER REFERENCES loans(id) ON DELETE CASCADE,
@@ -82,55 +92,6 @@ db.exec(`
     payment_date TEXT,
     year INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS escrow_accounts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    loan_id INTEGER UNIQUE REFERENCES loans(id) ON DELETE CASCADE,
-    starting_balance REAL NOT NULL DEFAULT 0,
-    target_balance REAL,
-    notes TEXT,
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS escrow_adjustments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    loan_id INTEGER REFERENCES loans(id) ON DELETE CASCADE,
-    effective_date TEXT NOT NULL,
-    new_monthly_escrow REAL NOT NULL,
-    new_target_balance REAL,
-    reason TEXT,
-    notes TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS bill_categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    icon TEXT DEFAULT '💡',
-    color TEXT DEFAULT '#7B8FA1',
-    custom_fields TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS bills (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category_id INTEGER REFERENCES bill_categories(id) ON DELETE CASCADE,
-    bill_date TEXT NOT NULL,
-    amount REAL NOT NULL,
-    due_date TEXT,
-    paid INTEGER DEFAULT 0,
-    notes TEXT,
-    custom_data TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-  );
-  CREATE TABLE IF NOT EXISTS loan_documents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    loan_id INTEGER REFERENCES loans(id) ON DELETE CASCADE,
-    payment_id INTEGER REFERENCES payments(id) ON DELETE CASCADE,
-    escrow_item_id INTEGER,
-    bill_id INTEGER,
-    filename TEXT NOT NULL,
-    original_name TEXT NOT NULL,
-    doc_type TEXT DEFAULT 'document',
-    description TEXT,
-    uploaded_at TEXT DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -149,8 +110,6 @@ db.exec(`
   `ALTER TABLE payments ADD COLUMN statement_filename TEXT`,
   `ALTER TABLE users ADD COLUMN reset_token TEXT`,
   `ALTER TABLE users ADD COLUMN reset_token_expires TEXT`,
-  `ALTER TABLE loan_documents ADD COLUMN escrow_item_id INTEGER`,
-  `ALTER TABLE loan_documents ADD COLUMN bill_id INTEGER`,
 ].forEach(sql => { try { db.prepare(sql).run(); } catch (e) {} });
 
 console.log('Database initialized at ' + DB_PATH);
@@ -174,35 +133,30 @@ const PDF_PROMPT = `Extract mortgage payment information from this statement. Re
 {"payment_date":"YYYY-MM-DD","statement_month":"YYYY-MM","total_payment":0.00,"principal":0.00,"interest":0.00,"escrow":0.00,"extra_principal":0.00,"ending_balance":0.00,"notes":""}
 Use null for missing values.`;
 
-const ESCROW_PDF_PROMPT = `Extract escrow account information from this annual escrow statement. Return ONLY a raw JSON object with no markdown, no code blocks, no backticks, no explanation.
-{"period_start":"YYYY-MM-DD","period_end":"YYYY-MM-DD","starting_balance":0.00,"ending_balance":0.00,"total_deposits":0.00,"total_disbursements":0.00,"new_monthly_escrow":0.00,"target_balance":0.00,"shortage_surplus":0.00,"disbursements":[{"date":"YYYY-MM-DD","description":"","amount":0.00}],"notes":""}
-Use null for missing values.`;
-
-const BILL_PDF_PROMPT = `Extract utility/service bill information from this statement. Return ONLY a raw JSON object with no markdown, no code blocks, no backticks, no explanation.
-{"bill_date":"YYYY-MM-DD","due_date":"YYYY-MM-DD","amount":0.00,"usage_kwh":null,"usage_gallons":null,"usage_gb":null,"service_period_start":null,"service_period_end":null,"account_number":null,"notes":""}
-Use null for missing values.`;
-
 function parseAI(text) { return JSON.parse(text.trim().replace(/```json|```/g,'').trim()); }
 
-async function extractFromPDF(provider, apiKey, b64, prompt) {
-  if (provider === 'claude') {
-    const c = new Anthropic({ apiKey });
-    const r = await c.messages.create({ model:'claude-opus-4-6', max_tokens:2048,
-      messages:[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:prompt}]}]});
-    return parseAI(r.content[0].text);
-  }
-  if (provider === 'openai' || provider === 'copilot') {
-    const c = provider === 'copilot' ? new OpenAI({apiKey,baseURL:'https://models.inference.ai.azure.com'}) : new OpenAI({ apiKey });
-    const r = await c.chat.completions.create({ model:'gpt-4o', max_tokens:2048,
-      messages:[{role:'user',content:[{type:'file',file:{filename:'statement.pdf',file_data:'data:application/pdf;base64,'+b64}},{type:'text',text:prompt}]}]});
-    return parseAI(r.choices[0].message.content);
-  }
-  if (provider === 'gemini') {
-    const m = new GoogleGenerativeAI(apiKey).getGenerativeModel({model:'gemini-2.0-flash'});
-    const r = await m.generateContent([{inlineData:{mimeType:'application/pdf',data:b64}},prompt]);
-    return parseAI(r.response.text());
-  }
-  throw new Error('Unknown provider');
+async function extractWithClaude(apiKey, b64) {
+  const c = new Anthropic({ apiKey });
+  const r = await c.messages.create({ model:'claude-opus-4-6', max_tokens:1024,
+    messages:[{role:'user',content:[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},{type:'text',text:PDF_PROMPT}]}]});
+  return parseAI(r.content[0].text);
+}
+async function extractWithOpenAI(apiKey, b64) {
+  const c = new OpenAI({ apiKey });
+  const r = await c.chat.completions.create({ model:'gpt-4o', max_tokens:1024,
+    messages:[{role:'user',content:[{type:'file',file:{filename:'statement.pdf',file_data:'data:application/pdf;base64,'+b64}},{type:'text',text:PDF_PROMPT}]}]});
+  return parseAI(r.choices[0].message.content);
+}
+async function extractWithGemini(apiKey, b64) {
+  const m = new GoogleGenerativeAI(apiKey).getGenerativeModel({model:'gemini-2.0-flash'});
+  const r = await m.generateContent([{inlineData:{mimeType:'application/pdf',data:b64}},PDF_PROMPT]);
+  return parseAI(r.response.text());
+}
+async function extractWithCopilot(apiKey, b64) {
+  const c = new OpenAI({apiKey,baseURL:'https://models.inference.ai.azure.com'});
+  const r = await c.chat.completions.create({model:'gpt-4o',max_tokens:1024,
+    messages:[{role:'user',content:[{type:'file',file:{filename:'statement.pdf',file_data:'data:application/pdf;base64,'+b64}},{type:'text',text:PDF_PROMPT}]}]});
+  return parseAI(r.choices[0].message.content);
 }
 
 // ─── EXPRESS ──────────────────────────────────────────────────────────────────
@@ -230,7 +184,7 @@ function auth(req, res, next) {
   catch(e) { res.status(401).json({ error:'Invalid token' }); }
 }
 
-// ─── PUBLIC AUTH ──────────────────────────────────────────────────────────────
+// ─── PUBLIC AUTH ROUTES ───────────────────────────────────────────────────────
 app.get('/api/auth/status', (req, res) => {
   res.json({ needsSetup: db.prepare('SELECT COUNT(*) as c FROM users').get().c === 0 });
 });
@@ -250,40 +204,58 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ error:'Invalid credentials' });
   res.json({ token: jwt.sign({username},JWT_SECRET,{expiresIn:'30d'}), username });
 });
+
+// Generate a one-time reset token — accessible from the server's local network only
+// Usage: GET http://your-server:3010/api/auth/generate-reset-token
 app.get('/api/auth/generate-reset-token', (req, res) => {
   const user = db.prepare('SELECT * FROM users LIMIT 1').get();
   if (!user) return res.status(404).json({ error: 'No user account found' });
   const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // 15 minutes
   db.prepare('UPDATE users SET reset_token=?, reset_token_expires=? WHERE id=?').run(token, expires, user.id);
-  res.json({ message:'Reset token generated. Open the URL below in your browser within 15 minutes.', reset_url:`/reset-password?token=${token}` });
-});
-app.get('/api/auth/validate-reset-token', (req, res) => {
-  const { token } = req.query;
-  if (!token) return res.status(400).json({ error:'Token required' });
-  const user = db.prepare('SELECT * FROM users WHERE reset_token=?').get(token);
-  if (!user) return res.status(400).json({ error:'Invalid or expired token' });
-  if (new Date(user.reset_token_expires) < new Date()) return res.status(400).json({ error:'Token expired' });
-  res.json({ valid:true, username:user.username });
-});
-app.post('/api/auth/reset-password', (req, res) => {
-  const { token, newPassword } = req.body;
-  if (!token || !newPassword || newPassword.length < 6) return res.status(400).json({ error:'Token and password (min 6) required' });
-  const user = db.prepare('SELECT * FROM users WHERE reset_token=?').get(token);
-  if (!user) return res.status(400).json({ error:'Invalid or expired token' });
-  if (new Date(user.reset_token_expires) < new Date()) return res.status(400).json({ error:'Token expired' });
-  db.prepare('UPDATE users SET password_hash=?, reset_token=NULL, reset_token_expires=NULL WHERE id=?').run(bcrypt.hashSync(newPassword,10), user.id);
-  res.json({ success:true, message:'Password updated' });
+  const resetUrl = `/reset-password?token=${token}`;
+  res.json({
+    message: 'Reset token generated. Open the URL below in your browser within 15 minutes.',
+    reset_url: resetUrl,
+    full_url: `(open PayoffIQ in your browser and navigate to: ${resetUrl})`
+  });
 });
 
-// ─── PROTECTED ────────────────────────────────────────────────────────────────
+// Validate a reset token (used by the frontend reset page)
+app.get('/api/auth/validate-reset-token', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Token required' });
+  const user = db.prepare('SELECT * FROM users WHERE reset_token=?').get(token);
+  if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+  if (new Date(user.reset_token_expires) < new Date())
+    return res.status(400).json({ error: 'Token expired — generate a new one' });
+  res.json({ valid: true, username: user.username });
+});
+
+// Consume the token and set a new password
+app.post('/api/auth/reset-password', (req, res) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword || newPassword.length < 6)
+    return res.status(400).json({ error: 'Token and new password (min 6 chars) required' });
+  const user = db.prepare('SELECT * FROM users WHERE reset_token=?').get(token);
+  if (!user) return res.status(400).json({ error: 'Invalid or expired token' });
+  if (new Date(user.reset_token_expires) < new Date())
+    return res.status(400).json({ error: 'Token expired — generate a new one' });
+  db.prepare('UPDATE users SET password_hash=?, reset_token=NULL, reset_token_expires=NULL WHERE id=?')
+    .run(bcrypt.hashSync(newPassword, 10), user.id);
+  res.json({ success: true, message: 'Password updated — you can now log in' });
+});
+
+// ─── PROTECTED ROUTES ─────────────────────────────────────────────────────────
 app.use('/api', auth);
 
 app.post('/api/auth/change-password', (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const user = db.prepare('SELECT * FROM users WHERE username=?').get(req.user.username);
-  if (!bcrypt.compareSync(currentPassword, user.password_hash)) return res.status(401).json({ error:'Current password incorrect' });
-  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error:'Min 6 characters' });
+  if (!bcrypt.compareSync(currentPassword, user.password_hash))
+    return res.status(401).json({ error:'Current password incorrect' });
+  if (!newPassword || newPassword.length < 6)
+    return res.status(400).json({ error:'Min 6 characters' });
   db.prepare('UPDATE users SET password_hash=? WHERE username=?').run(bcrypt.hashSync(newPassword,10), req.user.username);
   res.json({ success:true });
 });
@@ -338,7 +310,10 @@ app.post('/api/loans/:id/arm-rates', (req,res) => {
   db.prepare('UPDATE loans SET interest_rate=? WHERE id=?').run(rate,req.params.id);
   res.json(db.prepare('SELECT * FROM arm_rate_history WHERE id=?').get(r.lastInsertRowid));
 });
-app.delete('/api/arm-rates/:id', (req,res) => { db.prepare('DELETE FROM arm_rate_history WHERE id=?').run(req.params.id); res.json({success:true}); });
+app.delete('/api/arm-rates/:id', (req,res) => {
+  db.prepare('DELETE FROM arm_rate_history WHERE id=?').run(req.params.id);
+  res.json({success:true});
+});
 
 // PAYMENTS
 app.get('/api/loans/:id/payments', (req,res) =>
@@ -378,19 +353,19 @@ app.get('/api/loans/:id/documents', (req,res) => {
   if (payment_id) {
     res.json(db.prepare('SELECT * FROM loan_documents WHERE loan_id=? AND payment_id=? ORDER BY uploaded_at DESC').all(req.params.id,payment_id));
   } else {
-    res.json(db.prepare('SELECT * FROM loan_documents WHERE loan_id=? AND payment_id IS NULL AND escrow_item_id IS NULL AND bill_id IS NULL ORDER BY uploaded_at DESC').all(req.params.id));
+    res.json(db.prepare('SELECT * FROM loan_documents WHERE loan_id=? AND payment_id IS NULL ORDER BY uploaded_at DESC').all(req.params.id));
   }
 });
 app.get('/api/loans/:id/all-documents', (req,res) =>
   res.json(db.prepare(`SELECT d.*,p.payment_date,p.statement_month FROM loan_documents d LEFT JOIN payments p ON d.payment_id=p.id WHERE d.loan_id=? ORDER BY d.uploaded_at DESC`).all(req.params.id)));
 app.post('/api/loans/:id/documents', upload.single('file'), (req,res) => {
   if(!req.file)return res.status(400).json({error:'No file uploaded'});
-  const {payment_id,escrow_item_id,doc_type,description}=req.body;
+  const {payment_id,doc_type,description}=req.body;
   const ext=path.extname(req.file.originalname);
   const filename=`doc-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
   fs.renameSync(req.file.path,path.join(STATEMENTS_DIR,filename));
-  const r=db.prepare('INSERT INTO loan_documents (loan_id,payment_id,escrow_item_id,filename,original_name,doc_type,description) VALUES (?,?,?,?,?,?,?)')
-    .run(req.params.id,payment_id||null,escrow_item_id||null,filename,req.file.originalname,doc_type||'document',description||null);
+  const r=db.prepare('INSERT INTO loan_documents (loan_id,payment_id,filename,original_name,doc_type,description) VALUES (?,?,?,?,?,?)')
+    .run(req.params.id,payment_id||null,filename,req.file.originalname,doc_type||'document',description||null);
   res.json(db.prepare('SELECT * FROM loan_documents WHERE id=?').get(r.lastInsertRowid));
 });
 app.delete('/api/documents/:id', (req,res) => {
@@ -414,19 +389,7 @@ app.post('/api/payments/:id/attach-temp-pdf', (req,res) => {
   res.json({success:true,filename:finalName});
 });
 
-// STORE PDF WITHOUT AI
-app.post('/api/loans/:id/store-pdf', upload.single('pdf'), (req,res) => {
-  if(!req.file)return res.status(400).json({error:'No PDF'});
-  const {payment_id,escrow_item_id,doc_type,description}=req.body;
-  const ext=path.extname(req.file.originalname);
-  const filename=`doc-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-  fs.renameSync(req.file.path,path.join(STATEMENTS_DIR,filename));
-  const r=db.prepare('INSERT INTO loan_documents (loan_id,payment_id,escrow_item_id,filename,original_name,doc_type,description) VALUES (?,?,?,?,?,?,?)')
-    .run(req.params.id,payment_id||null,escrow_item_id||null,filename,req.file.originalname,doc_type||'statement',description||null);
-  res.json({success:true,document:db.prepare('SELECT * FROM loan_documents WHERE id=?').get(r.lastInsertRowid)});
-});
-
-// ESCROW ITEMS
+// ESCROW
 app.get('/api/loans/:id/escrow', (req,res) =>
   res.json(db.prepare('SELECT * FROM escrow_items WHERE loan_id=? ORDER BY payment_date DESC').all(req.params.id)));
 app.post('/api/loans/:id/escrow', (req,res) => {
@@ -434,77 +397,7 @@ app.post('/api/loans/:id/escrow', (req,res) => {
   const r=db.prepare('INSERT INTO escrow_items (loan_id,item_type,description,amount,payment_date,year) VALUES (?,?,?,?,?,?)').run(req.params.id,item_type,description,amount,payment_date,year);
   res.json(db.prepare('SELECT * FROM escrow_items WHERE id=?').get(r.lastInsertRowid));
 });
-app.put('/api/escrow/:id', (req,res) => {
-  const {item_type,description,amount,payment_date,year}=req.body;
-  db.prepare('UPDATE escrow_items SET item_type=?,description=?,amount=?,payment_date=?,year=? WHERE id=?').run(item_type,description,amount,payment_date,year,req.params.id);
-  res.json(db.prepare('SELECT * FROM escrow_items WHERE id=?').get(req.params.id));
-});
 app.delete('/api/escrow/:id', (req,res) => { db.prepare('DELETE FROM escrow_items WHERE id=?').run(req.params.id); res.json({success:true}); });
-
-// ESCROW ACCOUNT SETUP
-app.get('/api/loans/:id/escrow-account', (req,res) => {
-  const acct = db.prepare('SELECT * FROM escrow_accounts WHERE loan_id=?').get(req.params.id);
-  res.json(acct || {loan_id:parseInt(req.params.id),starting_balance:0,target_balance:null,notes:null});
-});
-app.post('/api/loans/:id/escrow-account', (req,res) => {
-  const {starting_balance,target_balance,notes}=req.body;
-  db.prepare(`INSERT INTO escrow_accounts (loan_id,starting_balance,target_balance,notes,updated_at) VALUES (?,?,?,?,datetime('now'))
-    ON CONFLICT(loan_id) DO UPDATE SET starting_balance=excluded.starting_balance,target_balance=excluded.target_balance,notes=excluded.notes,updated_at=excluded.updated_at`)
-    .run(req.params.id,starting_balance||0,target_balance||null,notes||null);
-  res.json(db.prepare('SELECT * FROM escrow_accounts WHERE loan_id=?').get(req.params.id));
-});
-
-// ESCROW ADJUSTMENTS (annual statement)
-app.get('/api/loans/:id/escrow-adjustments', (req,res) =>
-  res.json(db.prepare('SELECT * FROM escrow_adjustments WHERE loan_id=? ORDER BY effective_date ASC').all(req.params.id)));
-app.post('/api/loans/:id/escrow-adjustments', (req,res) => {
-  const {effective_date,new_monthly_escrow,new_target_balance,reason,notes}=req.body;
-  const r=db.prepare('INSERT INTO escrow_adjustments (loan_id,effective_date,new_monthly_escrow,new_target_balance,reason,notes) VALUES (?,?,?,?,?,?)').run(req.params.id,effective_date,new_monthly_escrow,new_target_balance||null,reason||null,notes||null);
-  res.json(db.prepare('SELECT * FROM escrow_adjustments WHERE id=?').get(r.lastInsertRowid));
-});
-app.delete('/api/escrow-adjustments/:id', (req,res) => { db.prepare('DELETE FROM escrow_adjustments WHERE id=?').run(req.params.id); res.json({success:true}); });
-
-// ESCROW RUNNING BALANCE
-app.get('/api/loans/:id/escrow-balance', (req,res) => {
-  const loan = db.prepare('SELECT * FROM loans WHERE id=?').get(req.params.id);
-  if(!loan) return res.status(404).json({error:'Loan not found'});
-  const acct = db.prepare('SELECT * FROM escrow_accounts WHERE loan_id=?').get(req.params.id);
-  const deposits = db.prepare('SELECT payment_date,escrow FROM payments WHERE loan_id=? AND escrow>0 ORDER BY payment_date ASC').all(req.params.id);
-  const disbursements = db.prepare('SELECT payment_date,amount,item_type,description FROM escrow_items WHERE loan_id=? ORDER BY payment_date ASC').all(req.params.id);
-  let balance = acct ? parseFloat(acct.starting_balance) : 0;
-  const events = [];
-  deposits.forEach(p => events.push({date:p.payment_date, type:'deposit', amount:parseFloat(p.escrow), description:'Monthly escrow deposit'}));
-  disbursements.forEach(d => events.push({date:d.payment_date, type:'disbursement', amount:parseFloat(d.amount), description:d.description||d.item_type}));
-  events.sort((a,b) => (a.date||'').localeCompare(b.date||''));
-  const ledger = events.map(e => {
-    if(e.type==='deposit') balance += e.amount;
-    else balance -= e.amount;
-    return {...e, running_balance: parseFloat(balance.toFixed(2))};
-  });
-  res.json({starting_balance:acct?.starting_balance||0, current_balance:parseFloat(balance.toFixed(2)), target_balance:acct?.target_balance||null, ledger});
-});
-
-// ESCROW DOCS AND PDF
-app.get('/api/escrow/:id/documents', (req,res) =>
-  res.json(db.prepare('SELECT * FROM loan_documents WHERE escrow_item_id=? ORDER BY uploaded_at DESC').all(req.params.id)));
-
-app.post('/api/loans/:id/analyze-escrow-pdf', upload.single('pdf'), async (req,res) => {
-  if(!req.file) return res.status(400).json({error:'No PDF'});
-  const provider = req.body.provider||'claude';
-  const keyMap = {claude:'claude_api_key',openai:'openai_api_key',gemini:'gemini_api_key',copilot:'copilot_api_key'};
-  const apiKey = getSetting(keyMap[provider]);
-  if(!apiKey){try{fs.unlinkSync(req.file.path);}catch(e){} return res.status(400).json({error:'No API key for '+provider});}
-  try {
-    const b64 = fs.readFileSync(req.file.path).toString('base64');
-    const data = await extractFromPDF(provider, apiKey, b64, ESCROW_PDF_PROMPT);
-    const tempFilename = `temp-${Date.now()}.pdf`;
-    fs.renameSync(req.file.path, path.join(STATEMENTS_DIR,tempFilename));
-    res.json({success:true, extracted:data, tempFilename});
-  } catch(err) {
-    try{if(req.file?.path)fs.unlinkSync(req.file.path);}catch(e){}
-    res.status(500).json({error:err.message});
-  }
-});
 
 // ANALYTICS
 app.get('/api/loans/:id/analytics', (req,res) => {
@@ -541,6 +434,7 @@ app.post('/api/loans/:id/calculate-payoff', (req,res) => {
   const extraMonthly=parseFloat(req.body.extra_monthly)||0;
   const lumpSum=parseFloat(req.body.lump_sum)||0;
   const targetDates=req.body.target_dates||[];
+
   const calc=(startBal,payment)=>{
     if(payment<=startBal*monthlyRate)return null;
     let bal=startBal,months=0,totalInterest=0;
@@ -549,31 +443,47 @@ app.post('/api/loans/:id/calculate-payoff', (req,res) => {
   };
   const now=new Date();
   const pd=(m)=>{const d=new Date(now);d.setMonth(d.getMonth()+m);return d.toISOString().split('T')[0];};
+
   const base=calc(currentBalance,basePayment);
   const monthly=extraMonthly>0?calc(currentBalance,basePayment+extraMonthly):null;
   const lump=lumpSum>0?calc(Math.max(0,currentBalance-lumpSum),basePayment):null;
   const combined=(extraMonthly>0&&lumpSum>0)?calc(Math.max(0,currentBalance-lumpSum),basePayment+extraMonthly):null;
+
+  // Payoff-by-date
   const targetResults=targetDates.map(dateStr=>{
     const target=new Date(dateStr);
     const monthsAvail=Math.round((target-now)/(1000*60*60*24*30.44));
     if(monthsAvail<=0)return{date:dateStr,impossible:true,reason:'Date is in the past'};
     if(!base||monthsAvail>=base.months)return{date:dateStr,impossible:true,reason:'Already on track to pay off before this date'};
     let lo=basePayment,hi=currentBalance*2,required=null;
-    for(let i=0;i<60;i++){const mid=(lo+hi)/2;const r=calc(currentBalance,mid);if(!r){lo=mid;continue;}if(r.months<=monthsAvail){required=mid;hi=mid;}else lo=mid;}
+    for(let i=0;i<60;i++){
+      const mid=(lo+hi)/2;
+      const r=calc(currentBalance,mid);
+      if(!r){lo=mid;continue;}
+      if(r.months<=monthsAvail){required=mid;hi=mid;}else lo=mid;
+    }
     if(!required||required>currentBalance*1.5)return{date:dateStr,impossible:true,reason:'Would require unrealistically large payments'};
     const result=calc(currentBalance,required);
     return{date:dateStr,impossible:false,monthsAvail,extraMonthlyNeeded:required-basePayment,totalPayment:required,
       totalInterest:result.totalInterest,interestSaved:base?base.totalInterest-result.totalInterest:0,monthsSaved:base?base.months-result.months:0};
   });
+
+  // ARM scenarios
   const armScenarios=[];
   if(loan.loan_type==='arm'&&loan.arm_rate_cap&&loan.arm_rate_floor){
     const worstRate=Math.min(loan.arm_rate_cap,loan.interest_rate+(loan.arm_periodic_cap||2)*3);
-    [{label:'Worst case (rate cap)',rate:worstRate},{label:'Current rate',rate:loan.interest_rate},{label:'Best case (rate floor)',rate:loan.arm_rate_floor}].forEach(sc=>{
-      const r=sc.rate/100/12;let bal=currentBalance,months=0,ti=0;
+    [
+      {label:'Worst case (rate cap)',rate:worstRate},
+      {label:'Current rate',rate:loan.interest_rate},
+      {label:'Best case (rate floor)',rate:loan.arm_rate_floor},
+    ].forEach(sc=>{
+      const r=sc.rate/100/12;
+      let bal=currentBalance,months=0,ti=0;
       while(bal>0.01&&months<600){const ic=bal*r;bal-=Math.min(basePayment-ic,bal);ti+=ic;months++;}
       armScenarios.push({...sc,months,totalInterest:ti,payoffDate:pd(months)});
     });
   }
+
   res.json({
     base:base?{months:base.months,totalInterest:base.totalInterest,payoffDate:pd(base.months)}:null,
     monthly:monthly?{months:monthly.months,totalInterest:monthly.totalInterest,payoffDate:pd(monthly.months)}:null,
@@ -588,94 +498,30 @@ app.post('/api/loans/:id/calculate-payoff', (req,res) => {
   });
 });
 
-// PDF PROCESSING (payments AI)
+// PDF PROCESSING
 app.post('/api/loans/:id/process-pdf', upload.single('pdf'), async (req,res) => {
-  if(!req.file)return res.status(400).json({error:'No PDF'});
+  if(!req.file)return res.status(400).json({error:'No PDF uploaded'});
   const provider=req.body.provider||'claude';
   const keyMap={claude:'claude_api_key',openai:'openai_api_key',gemini:'gemini_api_key',copilot:'copilot_api_key'};
   const apiKey=getSetting(keyMap[provider]);
   if(!apiKey){try{fs.unlinkSync(req.file.path);}catch(e){}return res.status(400).json({error:'No API key for '+provider});}
   try{
     const b64=fs.readFileSync(req.file.path).toString('base64');
-    const data=await extractFromPDF(provider, apiKey, b64, PDF_PROMPT);
+    let data;
+    if(provider==='claude')data=await extractWithClaude(apiKey,b64);
+    else if(provider==='openai')data=await extractWithOpenAI(apiKey,b64);
+    else if(provider==='gemini')data=await extractWithGemini(apiKey,b64);
+    else if(provider==='copilot')data=await extractWithCopilot(apiKey,b64);
+    else throw new Error('Unknown provider');
     const tempFilename=`temp-${Date.now()}.pdf`;
     fs.renameSync(req.file.path,path.join(STATEMENTS_DIR,tempFilename));
     res.json({success:true,extracted:data,provider,tempFilename});
   }catch(err){
-    try{if(req.file?.path)fs.unlinkSync(req.file.path);}catch(e){}
-    res.status(500).json({error:err.message});
-  }
-});
-
-// BILL CATEGORIES
-app.get('/api/bills/categories', (req,res) => res.json(db.prepare('SELECT * FROM bill_categories ORDER BY name ASC').all()));
-app.post('/api/bills/categories', (req,res) => {
-  const {name,icon,color,custom_fields}=req.body;
-  const r=db.prepare('INSERT INTO bill_categories (name,icon,color,custom_fields) VALUES (?,?,?,?)').run(name,icon||'💡',color||'#7B8FA1',custom_fields?JSON.stringify(custom_fields):null);
-  res.json(db.prepare('SELECT * FROM bill_categories WHERE id=?').get(r.lastInsertRowid));
-});
-app.put('/api/bills/categories/:id', (req,res) => {
-  const {name,icon,color,custom_fields}=req.body;
-  db.prepare('UPDATE bill_categories SET name=?,icon=?,color=?,custom_fields=? WHERE id=?').run(name,icon||'💡',color||'#7B8FA1',custom_fields?JSON.stringify(custom_fields):null,req.params.id);
-  res.json(db.prepare('SELECT * FROM bill_categories WHERE id=?').get(req.params.id));
-});
-app.delete('/api/bills/categories/:id', (req,res) => { db.prepare('DELETE FROM bill_categories WHERE id=?').run(req.params.id); res.json({success:true}); });
-
-// BILLS
-app.get('/api/bills', (req,res) => {
-  const {category_id}=req.query;
-  const sql=category_id
-    ?'SELECT b.*,bc.name cat_name,bc.icon cat_icon,bc.color cat_color,bc.custom_fields FROM bills b JOIN bill_categories bc ON b.category_id=bc.id WHERE b.category_id=? ORDER BY b.bill_date DESC'
-    :'SELECT b.*,bc.name cat_name,bc.icon cat_icon,bc.color cat_color,bc.custom_fields FROM bills b JOIN bill_categories bc ON b.category_id=bc.id ORDER BY b.bill_date DESC';
-  res.json(category_id ? db.prepare(sql).all(category_id) : db.prepare(sql).all());
-});
-app.post('/api/bills', (req,res) => {
-  const {category_id,bill_date,amount,due_date,paid,notes,custom_data}=req.body;
-  const r=db.prepare('INSERT INTO bills (category_id,bill_date,amount,due_date,paid,notes,custom_data) VALUES (?,?,?,?,?,?,?)').run(category_id,bill_date,amount,due_date||null,paid?1:0,notes||null,custom_data?JSON.stringify(custom_data):null);
-  res.json(db.prepare('SELECT * FROM bills WHERE id=?').get(r.lastInsertRowid));
-});
-app.put('/api/bills/:id', (req,res) => {
-  const {category_id,bill_date,amount,due_date,paid,notes,custom_data}=req.body;
-  db.prepare('UPDATE bills SET category_id=?,bill_date=?,amount=?,due_date=?,paid=?,notes=?,custom_data=? WHERE id=?').run(category_id,bill_date,amount,due_date||null,paid?1:0,notes||null,custom_data?JSON.stringify(custom_data):null,req.params.id);
-  res.json(db.prepare('SELECT * FROM bills WHERE id=?').get(req.params.id));
-});
-app.delete('/api/bills/:id', (req,res) => {
-  const docs=db.prepare('SELECT filename FROM loan_documents WHERE bill_id=?').all(req.params.id);
-  docs.forEach(d=>{try{fs.unlinkSync(path.join(STATEMENTS_DIR,d.filename));}catch(e){}});
-  db.prepare('DELETE FROM bills WHERE id=?').run(req.params.id);
-  res.json({success:true});
-});
-
-// BILL DOCUMENTS
-app.get('/api/bills/:id/documents', (req,res) =>
-  res.json(db.prepare('SELECT * FROM loan_documents WHERE bill_id=? ORDER BY uploaded_at DESC').all(req.params.id)));
-app.post('/api/bills/:id/documents', upload.single('file'), (req,res) => {
-  if(!req.file)return res.status(400).json({error:'No file'});
-  const ext=path.extname(req.file.originalname);
-  const filename=`bill-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
-  fs.renameSync(req.file.path,path.join(STATEMENTS_DIR,filename));
-  const r=db.prepare('INSERT INTO loan_documents (loan_id,bill_id,filename,original_name,doc_type,description) VALUES (?,?,?,?,?,?)').run(null,req.params.id,filename,req.file.originalname,'bill',req.body.description||null);
-  res.json(db.prepare('SELECT * FROM loan_documents WHERE id=?').get(r.lastInsertRowid));
-});
-
-// BILL PDF AI ANALYSIS
-app.post('/api/bills/:id/analyze-pdf', upload.single('pdf'), async (req,res) => {
-  if(!req.file)return res.status(400).json({error:'No PDF'});
-  const provider=req.body.provider||'claude';
-  const keyMap={claude:'claude_api_key',openai:'openai_api_key',gemini:'gemini_api_key',copilot:'copilot_api_key'};
-  const apiKey=getSetting(keyMap[provider]);
-  if(!apiKey){try{fs.unlinkSync(req.file.path);}catch(e){}return res.status(400).json({error:'No API key for '+provider});}
-  try{
-    const b64=fs.readFileSync(req.file.path).toString('base64');
-    const data=await extractFromPDF(provider, apiKey, b64, BILL_PDF_PROMPT);
-    const tempFilename=`temp-${Date.now()}.pdf`;
-    fs.renameSync(req.file.path,path.join(STATEMENTS_DIR,tempFilename));
-    res.json({success:true,extracted:data,tempFilename});
-  }catch(err){
+    console.error('PDF error:',err);
     try{if(req.file?.path)fs.unlinkSync(req.file.path);}catch(e){}
     res.status(500).json({error:err.message});
   }
 });
 
 const PORT=process.env.PORT||3001;
-app.listen(PORT,()=>console.log('PayoffIQ backend on port '+PORT));
+app.listen(PORT,()=>console.log('MortgageIQ backend on port '+PORT));

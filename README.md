@@ -1,122 +1,108 @@
-# 💰 PayoffIQ
+# PayoffIQ 💰
 
-A self-hosted loan tracker that runs as a **single Docker container**. Track payments, store documents, model payoff scenarios, and extract data from statement PDFs using AI — all on your own server.
-
-Supports **Mortgage, ARM, HELOC, Auto, and Personal** loan types.
-
----
+A self-hosted loan and household finance manager. Track mortgages, auto loans, HELOC, ARM, and personal loans — plus household bills — with full AI-powered statement analysis and bank-accurate escrow tracking.
 
 ## Features
 
-**Loans & Dashboard**
-- Track multiple loans of any type simultaneously
-- Balance progress bar, payoff projection, and payment charts per loan
-- ARM loans: fixed period tracking, rate history log, and best/worst/current rate scenario modeling
+### 🏠 Loan Tracking
+- Multiple loan types: Mortgage, ARM, HELOC, Auto, Personal
+- Payment history with AI extraction (Claude, ChatGPT, Gemini, Copilot)
+- Save PDF statements to Documents (with or without AI analysis)
+- Principal, interest, escrow, and extra principal tracking
+- Running balance and payoff projection
 
-**Payments**
-- Log principal, interest, escrow, extra principal, and ending balance per payment
-- Auto-calculate ending balance from previous payment
-- Mismatch detection if payment fields don't sum to total
+### 🧮 Payoff Calculator
+- Extra monthly payment scenarios
+- Lump sum payoff modeling
+- Payoff-by-date calculator (up to 3 target dates)
+- ARM rate scenario modeling (best/worst/current)
+- Full amortization schedule viewer
 
-**Document Vault**
-- Attach PDFs and images directly to payments or to a loan itself
-- Drag-and-drop upload, clickable links, delete — no cloud storage involved
+### 🏛️ Escrow Tracker
+- Bank-accurate running balance ledger (deposits from payments + disbursements)
+- Balance vs. target progress bar
+- Annual escrow statement processing (AI extraction or manual entry)
+- Document attachment per disbursement (AI analysis or storage only)
+- Adjustment history from annual statements
 
-**AI Statement Extraction** *(optional)*
-- Upload a PDF statement and have payment data filled in automatically
-- Supports **Claude** (Anthropic), **ChatGPT** (OpenAI), **Gemini** (Google), and **Copilot** (Microsoft)
-- API keys stored locally in your database — add only the providers you want
+### 📁 Documents
+- Upload PDFs and images to any loan, payment, or escrow item
+- Cross-linked: documents show linked payment date with navigation button
+- Payment history shows "→ View in Payments" link from Documents view
 
-**Payoff Calculator**
-- Extra monthly payment, lump sum, or both — side-by-side scenario comparison
-- **Payoff-by-date**: enter a target date, see exactly how much extra you'd need to pay monthly
-- Interest saved and time saved shown for every scenario
-- Full amortization table for any scenario
+### 💡 Household Bills
+- Customizable bill categories (Electric, Internet, Water, TV, Insurance, etc.)
+- Quick presets with relevant tracking fields (kWh, GB, gallons, etc.)
+- AI PDF extraction per bill type
+- Analytics charts: payments over time + any custom field over time
+- Per-bill document storage
 
-**Escrow Tracker**
-- Separate log for property tax and insurance disbursements
-- Totals by type across all entries
+### 🎨 Themes (7)
+- ☀️ Light · 🌙 Dark · 🌊 Slate · 🟢 Green & Red · 🌌 Midnight · 🌲 Forest · 🐋 Ocean
 
-**Security**
-- Username + password login with bcrypt hashing and JWT sessions
-- All routes protected server-side — suitable for use behind a Cloudflare tunnel
-
-**All data stays local** — SQLite file on your own server, nothing leaves your machine
+### 🔑 Authentication & Security
+- Single-user JWT authentication
+- Password reset via local network token URL (no email required)
+- All data stored locally in SQLite
 
 ---
 
-## Quick Start
+## Unraid Setup
 
-```bash
-docker run -d \
-  --name payoffiq \
-  --restart unless-stopped \
-  -p 3010:3010 \
-  -v /mnt/user/appdata/payoffiq:/data \
-  ghcr.io/JonGaydos/payoffiq:latest
+1. Install via **Community Applications** or manually add the container template
+2. Set port to `3010` and data volume to `/mnt/user/appdata/payoffiq`
+3. Access at `http://[server-ip]:3010`
+
+### Force Update
+After GitHub Actions builds a new image: Docker tab → PayoffIQ → **Force Update**
+
+### Password Reset
+```
+http://[server-ip]:3010/api/auth/generate-reset-token
+```
+Copy the `reset_url` value and open it in your browser (valid 15 minutes).
+
+---
+
+## Docker (Self-hosted)
+
+```yaml
+version: '3'
+services:
+  payoffiq:
+    image: ghcr.io/jongaydos/payoffiq:latest
+    ports:
+      - "3010:80"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
 ```
 
-Open **http://localhost:3010** and create your account on first launch. No API keys required — add them later in Settings if you want PDF extraction.
+---
+
+## AI Provider Setup
+
+Go to **Settings** → API Keys. Supported providers:
+- **Claude** (Anthropic) — [console.anthropic.com/api-keys](https://console.anthropic.com/api-keys)
+- **ChatGPT** (OpenAI) — [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Gemini** (Google) — [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+- **Copilot** (Microsoft) — GitHub PAT with `models:read` scope
 
 ---
 
-## Unraid Installation
+## Help & Support
 
-### Option A — Community Apps *(once published)*
-Search **PayoffIQ** in Community Apps and click Install.
-
-### Option B — Manual template
-1. Docker tab → **Add Container**
-2. Paste the contents of `payoffiq-unraid-template.xml` into the template field
-3. Click **Apply**
+- [GitHub Issues & Discussions](https://github.com/JonGaydos/payoffiq)
+- Feature requests welcome!
 
 ---
 
-## AI Provider Setup *(optional)*
+## Architecture
 
-API keys are configured inside the app under **Settings → AI Provider API Keys** — no environment variables needed. Add keys for whichever providers you want:
+Single Docker container:
+- **nginx** — serves React frontend
+- **Node.js** — Express API backend
+- **SQLite** — local database (`/data/payoffiq.db`)
+- **supervisord** — process manager
 
-| Provider | Where to get a key |
-|---|---|
-| Claude (Anthropic) | [console.anthropic.com](https://console.anthropic.com/api-keys) |
-| ChatGPT (OpenAI) | [platform.openai.com](https://platform.openai.com/api-keys) |
-| Gemini (Google) | [aistudio.google.com](https://aistudio.google.com/app/apikey) |
-| Copilot (Microsoft) | [github.com/settings/tokens](https://github.com/settings/tokens) |
-
-Each PDF extraction costs fractions of a cent. $5 in credits will last years for personal use.
-
----
-
-## Updating
-
-```bash
-docker pull ghcr.io/JonGaydos/payoffiq:latest
-docker stop payoffiq && docker rm payoffiq
-docker run -d --name payoffiq --restart unless-stopped \
-  -p 3010:3010 \
-  -v /mnt/user/appdata/payoffiq:/data \
-  ghcr.io/JonGaydos/payoffiq:latest
-```
-
-Your data is never touched during updates. On Unraid, use the **Force Update** button on the container.
-
----
-
-## Data & Backups
-
-```
-/mnt/user/appdata/payoffiq/
-├── payoffiq.db     ← entire database (loans, payments, settings, users)
-└── statements/     ← uploaded documents and PDFs
-```
-
-To back up: copy the entire `payoffiq` appdata folder. To restore: stop the container, replace the files, start again.
-
----
-
-## Troubleshooting
-
-**Port conflict** — Change the left side of `-p 3010:3010` to any free port.  
-**Forgot password** — Stop the container, delete `payoffiq.db`, restart — you'll be prompted to create a new account. *(All loan data will be lost.)*  
-**PDF extraction fails** — Verify your API key and account credits in the provider's dashboard.  
-**View logs** — `docker logs payoffiq`
+Data persists in `/data` volume. No cloud dependencies.
