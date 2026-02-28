@@ -13,6 +13,8 @@ import calculatorRoutes from './routes/calculator.js';
 import creditCardRoutes from './routes/credit-cards.js';
 import dashboardRoutes from './routes/dashboard.js';
 import strategyRoutes from './routes/strategy.js';
+import billCategoryRoutes from './routes/bill-categories.js';
+import billRoutes from './routes/bills.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,6 +40,8 @@ app.use('/api/calculator', calculatorRoutes);
 app.use('/api/credit-cards', creditCardRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/strategy', strategyRoutes);
+app.use('/api/bill-categories', billCategoryRoutes);
+app.use('/api/bills', billRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

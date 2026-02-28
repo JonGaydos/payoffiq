@@ -25,6 +25,10 @@ import CardDetailPage from './pages/credit-cards/CardDetailPage';
 import StrategyPage from './pages/strategy/StrategyPage';
 import WhatIfPage from './pages/strategy/WhatIfPage';
 
+// Bill pages
+import BillsPage from './pages/bills/BillsPage';
+import BillDetailPage from './pages/bills/BillDetailPage';
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) {
@@ -84,8 +88,11 @@ function AppRoutes() {
         <Route path="strategy" element={<StrategyPage />} />
         <Route path="strategy/what-if" element={<WhatIfPage />} />
 
+        {/* Bill routes */}
+        <Route path="bills" element={<BillsPage />} />
+        <Route path="bills/:categoryId" element={<BillDetailPage />} />
+
         {/* Future phase placeholders */}
-        <Route path="bills" element={<ComingSoonPage title="Utilities & Bills" phase={5} />} />
         <Route path="insurance" element={<ComingSoonPage title="Insurance" phase={6} />} />
         <Route path="documents" element={<ComingSoonPage title="Documents" phase={7} />} />
         <Route path="maintenance" element={<ComingSoonPage title="Maintenance" phase={8} />} />
