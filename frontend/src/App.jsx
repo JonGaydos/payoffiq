@@ -240,31 +240,50 @@ function DocumentList({loanId,paymentId,escrowItemId,billId,refresh,onNavigateTo
 }
 
 // ─── STORE PDF WITHOUT AI ─────────────────────────────────────────────────────
-function StorePDFSection({loanId,paymentId,escrowItemId,onStored}){
+function StorePDFSection({loanId,paymentId,escrowItemId,billId,compact,onStored}){
   const [uploading,setUploading]=useState(false);
   const [desc,setDesc]=useState('');
   const [msg,setMsg]=useState(null);
-  const uid=`store-pdf-${paymentId||escrowItemId||'general'}-${Math.random().toString(36).slice(2)}`;
+  const uid=`store-pdf-${paymentId||escrowItemId||billId||'general'}-${Math.random().toString(36).slice(2)}`;
   const store=async(file)=>{
     setUploading(true);setMsg(null);
-    const fd=new FormData();fd.append('pdf',file);
-    if(paymentId)fd.append('payment_id',paymentId);
-    if(escrowItemId)fd.append('escrow_item_id',escrowItemId);
-    fd.append('doc_type',escrowItemId?'escrow':'statement');
-    if(desc)fd.append('description',desc);
-    const r=await authFetch(`${API}/loans/${loanId}/store-pdf`,{method:'POST',body:fd});
-    const data=await r.json();
-    setUploading(false);
-    if(data.success){setMsg('✓ PDF saved to Documents');setDesc('');onStored&&onStored(data.document);}
-    else setMsg('⚠ '+data.error);
+    const fd=new FormData();
+    if(billId){
+      fd.append('file',file);
+      if(desc)fd.append('description',desc);
+      fd.append('doc_type','bill');
+      const r=await authFetch(`${API}/bills/${billId}/documents`,{method:'POST',body:fd});
+      const data=await r.json();
+      setUploading(false);
+      if(data.id){setMsg('✓ Saved');setDesc('');onStored&&onStored(data);}
+      else setMsg('⚠ '+data.error);
+    } else {
+      fd.append('pdf',file);
+      if(paymentId)fd.append('payment_id',paymentId);
+      if(escrowItemId)fd.append('escrow_item_id',escrowItemId);
+      fd.append('doc_type',escrowItemId?'escrow':'statement');
+      if(desc)fd.append('description',desc);
+      const r=await authFetch(`${API}/loans/${loanId}/store-pdf`,{method:'POST',body:fd});
+      const data=await r.json();
+      setUploading(false);
+      if(data.success){setMsg('✓ Saved to Documents');setDesc('');onStored&&onStored(data.document);}
+      else setMsg('⚠ '+data.error);
+    }
   };
+  if(compact)return(
+    <div>
+      <input type="file" id={uid} accept=".pdf,.jpg,.jpeg,.png" style={{display:'none'}} onChange={e=>e.target.files[0]&&store(e.target.files[0])}/>
+      <button style={{...s.btn('ghost'),fontSize:12,padding:'4px 8px'}} onClick={()=>document.getElementById(uid).click()} disabled={uploading} title="Save file without AI">{uploading?'⏳':'📁 Save File'}</button>
+      {msg&&<div style={{fontSize:11,color:msg.startsWith('✓')?'var(--sage)':'var(--terracotta)',marginTop:2}}>{msg}</div>}
+    </div>
+  );
   return(
     <div style={{padding:16,borderRadius:10,border:'1px solid var(--border)',background:'var(--surface)'}}>
       <div style={{fontWeight:600,fontSize:13,marginBottom:10,color:'var(--ink)'}}>📁 Save to Documents (no AI analysis)</div>
-      <input type="file" id={uid} accept=".pdf" style={{display:'none'}} onChange={e=>e.target.files[0]&&store(e.target.files[0])}/>
+      <input type="file" id={uid} accept=".pdf,.jpg,.jpeg,.png" style={{display:'none'}} onChange={e=>e.target.files[0]&&store(e.target.files[0])}/>
       <div style={{display:'flex',gap:8,alignItems:'center'}}>
         <input style={{...s.input,flex:1}} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Label/description (optional)"/>
-        <button style={s.btn('outline')} onClick={()=>document.getElementById(uid).click()} disabled={uploading}>{uploading?'⏳ Saving...':'📁 Choose PDF'}</button>
+        <button style={s.btn('outline')} onClick={()=>document.getElementById(uid).click()} disabled={uploading}>{uploading?'⏳ Saving...':'📁 Choose File'}</button>
       </div>
       {msg&&<div style={{marginTop:8,fontSize:12,color:msg.startsWith('✓')?'var(--sage)':'var(--terracotta)'}}>{msg}</div>}
     </div>
@@ -700,6 +719,8 @@ const BILL_PRESETS = [
 
 const BILL_CYCLES=[{id:'monthly',label:'Monthly'},{id:'quarterly',label:'Quarterly'},{id:'biannual',label:'Every 6 Months'},{id:'annual',label:'Annual'}];
 
+const blankBillForm=()=>({category_id:'',bill_date:new Date().toISOString().split('T')[0],amount:'',due_date:'',paid:false,notes:'',custom_data:{}});
+
 function BillsView({initialCatId}){
   const [categories,setCategories]=useState([]);
   const [bills,setBills]=useState([]);
@@ -707,37 +728,75 @@ function BillsView({initialCatId}){
   const [showCatForm,setShowCatForm]=useState(false);
   const [showBillForm,setShowBillForm]=useState(false);
   const [catForm,setCatForm]=useState({name:'',icon:'💡',color:'#7B8FA1',custom_fields:[],cycle:'monthly'});
-  const [billForm,setBillForm]=useState({category_id:'',bill_date:'',amount:'',due_date:'',paid:false,notes:'',custom_data:{}});
+  const [newFieldName,setNewFieldName]=useState('');
+  const [newFieldType,setNewFieldType]=useState('number');
+  const [billForm,setBillForm]=useState(blankBillForm());
+  const [editBillId,setEditBillId]=useState(null);
   const [provider,setProvider]=useState('claude');
   const [analyzing,setAnalyzing]=useState(false);
   const [analyzeResult,setAnalyzeResult]=useState(null);
   const [docRefresh,setDocRefresh]=useState(0);
   const [activePreset,setActivePreset]=useState(null);
+  const [paperlessUrl,setPaperlessUrl]=useState('');
   const PROVIDERS=[{id:'claude',label:'Claude'},{id:'openai',label:'ChatGPT'},{id:'gemini',label:'Gemini'},{id:'copilot',label:'Copilot'}];
 
-  const loadCats=()=>authFetch(`${API}/bills/categories`).then(r=>r.json()).then(cats=>{setCategories(cats);if(initialCatId){const c=cats.find(x=>x.id===initialCatId);if(c)setSelectedCat(c);}});
+  const loadCats=()=>authFetch(`${API}/bills/categories`).then(r=>r.json()).then(cats=>{
+    setCategories(cats);
+    if(initialCatId&&!selectedCat){const c=cats.find(x=>x.id===initialCatId);if(c)setSelectedCat(c);}
+  });
   const loadBills=(catId)=>{
     const url=catId?`${API}/bills?category_id=${catId}`:`${API}/bills`;
     authFetch(url).then(r=>r.json()).then(setBills);
   };
-  useEffect(()=>{loadCats();},[]);
+  useEffect(()=>{loadCats();authFetch(`${API}/settings`).then(r=>r.json()).then(d=>{setPaperlessUrl(d?.paperless_ngx_url||'');}).catch(()=>{});},[]);
   useEffect(()=>{loadBills(selectedCat?.id);},[selectedCat]);
+
+  const getCustomFields=(cat)=>{if(!cat?.custom_fields)return[];try{return JSON.parse(cat.custom_fields);}catch{return[];}};
 
   const saveCat=async()=>{
     const method=catForm.id?'PUT':'POST';
     const url=catForm.id?`${API}/bills/categories/${catForm.id}`:`${API}/bills/categories`;
     await authFetch(url,{method,body:JSON.stringify({...catForm,custom_fields:catForm.custom_fields})});
-    setShowCatForm(false);loadCats();
+    setShowCatForm(false);setCatForm({name:'',icon:'💡',color:'#7B8FA1',custom_fields:[],cycle:'monthly'});setActivePreset(null);loadCats();
   };
-  const delCat=async(id)=>{if(!confirm('Delete this category and all bills?'))return;await authFetch(`${API}/bills/categories/${id}`,{method:'DELETE'});loadCats();if(selectedCat?.id===id)setSelectedCat(null);};
+  const delCat=async(id)=>{if(!confirm('Delete this category and all its bills?'))return;await authFetch(`${API}/bills/categories/${id}`,{method:'DELETE'});loadCats();if(selectedCat?.id===id)setSelectedCat(null);};
+
+  const addCustomField=()=>{
+    if(!newFieldName.trim())return;
+    const key=newFieldName.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+    if(catForm.custom_fields.find(f=>f.key===key))return;
+    setCatForm(f=>({...f,custom_fields:[...f.custom_fields,{key,label:newFieldName.trim(),type:newFieldType}]}));
+    setNewFieldName('');
+  };
+  const removeCustomField=(key)=>setCatForm(f=>({...f,custom_fields:f.custom_fields.filter(x=>x.key!==key)}));
+
+  const openBillForm=(bill=null)=>{
+    if(bill){
+      const cd=bill.custom_data?JSON.parse(bill.custom_data):{};
+      setBillForm({category_id:bill.category_id,bill_date:bill.bill_date?.split('T')[0]||'',amount:bill.amount,due_date:bill.due_date?.split('T')[0]||'',paid:!!bill.paid,notes:bill.notes||'',custom_data:cd});
+      setEditBillId(bill.id);
+    }else{
+      setBillForm({...blankBillForm(),category_id:selectedCat?.id||''});
+      setEditBillId(null);
+    }
+    setAnalyzeResult(null);setShowBillForm(true);
+  };
+
   const saveBill=async()=>{
     if(!billForm.category_id)return;
-    await authFetch(`${API}/bills`,{method:'POST',body:JSON.stringify(billForm)});
-    setShowBillForm(false);setBillForm({category_id:selectedCat?.id||'',bill_date:'',amount:'',due_date:'',paid:false,notes:'',custom_data:{}});
-    setAnalyzeResult(null);loadBills(selectedCat?.id);
+    if(editBillId){
+      await authFetch(`${API}/bills/${editBillId}`,{method:'PUT',body:JSON.stringify(billForm)});
+    }else{
+      await authFetch(`${API}/bills`,{method:'POST',body:JSON.stringify(billForm)});
+    }
+    setShowBillForm(false);setEditBillId(null);setBillForm(blankBillForm());setAnalyzeResult(null);loadBills(selectedCat?.id);
   };
-  const delBill=async(id)=>{if(!confirm('Delete?'))return;await authFetch(`${API}/bills/${id}`,{method:'DELETE'});loadBills(selectedCat?.id);};
-  const togglePaid=async(bill)=>{await authFetch(`${API}/bills/${bill.id}`,{method:'PUT',body:JSON.stringify({...bill,paid:!bill.paid,custom_data:bill.custom_data?JSON.parse(bill.custom_data):{}})});loadBills(selectedCat?.id);};
+  const delBill=async(id)=>{if(!confirm('Delete this bill entry?'))return;await authFetch(`${API}/bills/${id}`,{method:'DELETE'});loadBills(selectedCat?.id);};
+  const togglePaid=async(bill)=>{
+    const cd=bill.custom_data?JSON.parse(bill.custom_data):{};
+    await authFetch(`${API}/bills/${bill.id}`,{method:'PUT',body:JSON.stringify({...bill,paid:!bill.paid,custom_data:cd})});
+    loadBills(selectedCat?.id);
+  };
 
   const analyzeBillPDF=async(file,catId)=>{
     setAnalyzing(true);setAnalyzeResult(null);
@@ -745,29 +804,18 @@ function BillsView({initialCatId}){
     const r=await authFetch(`${API}/bills/${catId}/analyze-pdf`,{method:'POST',body:fd});
     const data=await r.json();
     if(data.success){
-      const e=data.extracted;setAnalyzeResult(e);
+      const e=data.extracted;setAnalyzeResult({ok:true});
       const cat=categories.find(c=>c.id===catId);
-      const fields=cat?.custom_fields?JSON.parse(cat.custom_fields):[];
+      const fields=getCustomFields(cat);
       const custom_data={};
       fields.forEach(f=>{if(e[f.key]!=null)custom_data[f.key]=e[f.key];});
       setBillForm(prev=>({...prev,category_id:catId,bill_date:e.bill_date||prev.bill_date,amount:e.amount||prev.amount,due_date:e.due_date||prev.due_date,notes:e.notes||prev.notes,custom_data}));
-    }else setAnalyzeResult({error:data.error});
+    }else setAnalyzeResult({ok:false,msg:data.error});
     setAnalyzing(false);
   };
 
   const catBills=bills.filter(b=>!selectedCat||b.category_id===selectedCat.id);
 
-  const getCustomFields=(cat)=>{
-    if(!cat?.custom_fields)return[];
-    try{return JSON.parse(cat.custom_fields);}catch{return[];}
-  };
-
-  const usePreset=(preset)=>{
-    setCatForm({name:preset.name,icon:preset.icon,color:preset.color,custom_fields:preset.custom_fields,cycle:'monthly'});
-    setActivePreset(preset.name);
-  };
-
-  // Build chart data grouped by billing cycle
   const buildChartData=(cat,billList)=>{
     if(!cat||!billList.length)return[];
     const cycle=cat.cycle||'monthly';
@@ -775,155 +823,209 @@ function BillsView({initialCatId}){
     billList.forEach(b=>{
       let key=b.bill_date?.slice(0,7)||'';
       if(cycle==='quarterly'){const m=parseInt(b.bill_date?.slice(5,7));const q=Math.ceil(m/3);key=`${b.bill_date?.slice(0,4)}-Q${q}`;}
-      else if(cycle==='biannual'){const m=parseInt(b.bill_date?.slice(5,7));const h=m<=6?'H1':'H2';key=`${b.bill_date?.slice(0,4)}-${h}`;}
+      else if(cycle==='biannual'){const m=parseInt(b.bill_date?.slice(5,7));key=`${b.bill_date?.slice(0,4)}-${m<=6?'H1':'H2'}`;}
       else if(cycle==='annual'){key=b.bill_date?.slice(0,4)||'';}
       if(!grouped[key])grouped[key]={date:key,amount:0};
       grouped[key].amount+=parseFloat(b.amount||0);
       const cd=b.custom_data?JSON.parse(b.custom_data):{};
       const fields=getCustomFields(cat);
-      fields.forEach(f=>{if(cd[f.key]!=null){if(!grouped[key][f.key])grouped[key][f.key]=0;grouped[key][f.key]+=parseFloat(cd[f.key]||0);}});
+      fields.forEach(f=>{if(cd[f.key]!=null){grouped[key][f.key]=(grouped[key][f.key]||0)+parseFloat(cd[f.key]||0);}});
     });
     return Object.values(grouped).sort((a,b)=>a.date.localeCompare(b.date));
+  };
+
+  const usePreset=(preset)=>{
+    setCatForm(f=>({...f,name:preset.name,icon:preset.icon,color:preset.color,custom_fields:[...preset.custom_fields]}));
+    setActivePreset(preset.name);
   };
 
   return(
     <div>
       <div className="page-header-row" style={{...s.pageHeader,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
         <div><h1 style={s.pageTitle}>💡 Household Bills</h1><p style={s.pageSub}>Track and analyze all your recurring bills</p></div>
-        <button style={s.btn()} onClick={()=>{setCatForm({name:'',icon:'💡',color:'#7B8FA1',custom_fields:[],cycle:'monthly'});setActivePreset(null);setShowCatForm(!showCatForm);}}>+ Add Bill Category</button>
+        <button style={s.btn()} onClick={()=>{setCatForm({name:'',icon:'💡',color:'#7B8FA1',custom_fields:[],cycle:'monthly'});setActivePreset(null);setShowCatForm(!showCatForm);}}>+ Add Category</button>
       </div>
 
-      {/* Category Form */}
-      {showCatForm&&(<div style={{...s.card,marginBottom:20}}>
-        <h3 style={{...s.sectionTitle,marginBottom:12}}>Add Bill Category</h3>
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:12,color:'var(--warm-gray)',marginBottom:8,fontWeight:500}}>Quick Presets</div>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-            {BILL_PRESETS.map(p=>(<button key={p.name} style={{padding:'6px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:`2px solid ${activePreset===p.name?p.color:'var(--border)'}`,background:activePreset===p.name?p.color+'20':'var(--surface)',color:'var(--ink)',fontWeight:activePreset===p.name?600:400}} onClick={()=>usePreset(p)}>{p.icon} {p.name}</button>))}
-          </div>
-        </div>
-        <div className="form-grid-2" style={{display:'grid',gridTemplateColumns:'1fr 80px 80px 150px',gap:12,alignItems:'flex-end',marginBottom:12}}>
-          <Field label="Category Name"><input style={s.input} value={catForm.name} onChange={e=>setCatForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Electric"/></Field>
-          <Field label="Icon"><input style={s.input} value={catForm.icon} onChange={e=>setCatForm(f=>({...f,icon:e.target.value}))} placeholder="💡"/></Field>
-          <Field label="Color"><input type="color" style={{...s.input,padding:'4px',height:42,cursor:'pointer'}} value={catForm.color} onChange={e=>setCatForm(f=>({...f,color:e.target.value}))}/></Field>
-          <Field label="Billing Cycle">
-            <select style={s.input} value={catForm.cycle||'monthly'} onChange={e=>setCatForm(f=>({...f,cycle:e.target.value}))}>
-              {BILL_CYCLES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-          </Field>
-        </div>
-        <button style={s.btn()} onClick={saveCat}>Save Category</button>
-        {catForm.custom_fields?.length>0&&(<div style={{marginTop:12,padding:12,background:'var(--surface)',borderRadius:8}}>
-          <div style={{fontSize:12,fontWeight:600,marginBottom:6,color:'var(--ink)'}}>Custom Tracking Fields</div>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>{catForm.custom_fields.map(f=>(<span key={f.key} style={{padding:'3px 8px',background:'var(--card)',border:'1px solid var(--border)',borderRadius:4,fontSize:11,color:'var(--ink)'}}>{f.label}</span>))}</div>
-        </div>)}
-      </div>)}
-
-      {/* Category Cards */}
-      {categories.length>0&&(<div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:20}}>
-        <div onClick={()=>setSelectedCat(null)} style={{padding:'12px 16px',borderRadius:10,cursor:'pointer',border:`2px solid ${!selectedCat?'var(--gold)':'var(--border)'}`,background:!selectedCat?'rgba(201,151,58,0.08)':'var(--card)',minWidth:80,textAlign:'center'}}>
-          <div style={{fontSize:20,marginBottom:2}}>📋</div><div style={{fontSize:12,fontWeight:!selectedCat?600:400,color:!selectedCat?'var(--gold)':'var(--ink)'}}>All Bills</div>
-        </div>
-        {categories.map(c=>{
-          const catBillCount=bills.filter(b=>b.category_id===c.id).length;
-          const cycle=BILL_CYCLES.find(x=>x.id===(c.cycle||'monthly'))?.label||'Monthly';
-          return(<div key={c.id} style={{position:'relative'}}>
-            <div onClick={()=>setSelectedCat(c)} style={{padding:'12px 16px',borderRadius:10,cursor:'pointer',border:`2px solid ${selectedCat?.id===c.id?c.color:'var(--border)'}`,background:selectedCat?.id===c.id?c.color+'15':'var(--card)',minWidth:110,textAlign:'center'}}>
-              <div style={{fontSize:20,marginBottom:2}}>{c.icon}</div>
-              <div style={{fontSize:12,fontWeight:selectedCat?.id===c.id?600:400,color:selectedCat?.id===c.id?c.color:'var(--ink)'}}>{c.name}</div>
-              <div style={{fontSize:10,color:'var(--warm-gray)',marginTop:2}}>{catBillCount} entries · {cycle}</div>
+      {/* ── CATEGORY FORM ── */}
+      {showCatForm&&(
+        <div style={{...s.card,marginBottom:20}}>
+          <h3 style={{...s.sectionTitle,marginBottom:12}}>Bill Category</h3>
+          {/* Presets */}
+          <div style={{marginBottom:16}}>
+            <div style={{fontSize:12,color:'var(--warm-gray)',marginBottom:8,fontWeight:500}}>Quick Presets (applies preset fields)</div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {BILL_PRESETS.map(p=>(<button key={p.name} style={{padding:'6px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:`2px solid ${activePreset===p.name?p.color:'var(--border)'}`,background:activePreset===p.name?p.color+'20':'var(--surface)',color:'var(--ink)',fontWeight:activePreset===p.name?600:400}} onClick={()=>usePreset(p)}>{p.icon} {p.name}</button>))}
             </div>
-            <button onClick={(e)=>{e.stopPropagation();delCat(c.id);}} style={{position:'absolute',top:-6,right:-6,background:'var(--terracotta)',color:'white',border:'none',borderRadius:'50%',width:18,height:18,fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
-          </div>);
-        })}
-      </div>)}
-
-      {/* Bill Form */}
-      {(selectedCat||categories.length>0)&&(<div style={{...s.card,marginBottom:20}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:showBillForm?16:0}}>
-          <h3 style={{...s.sectionTitle,marginBottom:0}}>Add Bill Entry</h3>
-          <button style={s.btn('outline')} onClick={()=>{setShowBillForm(!showBillForm);setBillForm({category_id:selectedCat?.id||'',bill_date:new Date().toISOString().split('T')[0],amount:'',due_date:'',paid:false,notes:'',custom_data:{}});setAnalyzeResult(null);}}>+ Add Entry</button>
-        </div>
-        {showBillForm&&(<div>
-          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
-            {categories.map(c=>(<button key={c.id} onClick={()=>setBillForm(f=>({...f,category_id:c.id,custom_data:{}}))} style={{padding:'6px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:`2px solid ${billForm.category_id===c.id?c.color:'var(--border)'}`,background:billForm.category_id===c.id?c.color+'20':'var(--surface)',color:'var(--ink)'}}>{c.icon} {c.name}</button>))}
           </div>
-          {billForm.category_id&&(<>
-            <div style={{padding:16,borderRadius:10,border:'1px solid var(--gold)',background:'rgba(201,151,58,0.04)',marginBottom:12}}>
-              <div style={{fontWeight:600,fontSize:13,color:'var(--gold)',marginBottom:10}}>🤖 AI Bill Extraction</div>
-              <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-                <select value={provider} onChange={e=>setProvider(e.target.value)} style={{padding:'6px 10px',fontSize:13,borderRadius:6,border:'1px solid var(--border)',background:'var(--surface)',color:'var(--ink)'}}>{PROVIDERS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}</select>
-                <input type="file" id="billPdfAI" accept=".pdf" style={{display:'none'}} onChange={e=>e.target.files[0]&&analyzeBillPDF(e.target.files[0],billForm.category_id)}/>
-                <button style={s.btn('outline')} onClick={()=>document.getElementById('billPdfAI').click()} disabled={analyzing}>{analyzing?'⏳ Analyzing...':'📄 Upload & Analyze PDF'}</button>
-                {analyzeResult&&!analyzeResult.error&&<span style={{fontSize:12,color:'var(--sage)'}}>✓ Data extracted</span>}
-                {analyzeResult?.error&&<span style={{fontSize:12,color:'var(--terracotta)'}}>⚠ {analyzeResult.error}</span>}
+          {/* Basic fields */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 80px 60px 160px',gap:12,alignItems:'flex-end',marginBottom:16}}>
+            <Field label="Category Name"><input style={s.input} value={catForm.name} onChange={e=>setCatForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Electric"/></Field>
+            <Field label="Icon"><input style={s.input} value={catForm.icon} onChange={e=>setCatForm(f=>({...f,icon:e.target.value}))} placeholder="💡"/></Field>
+            <Field label="Color"><input type="color" style={{...s.input,padding:'4px',height:42,cursor:'pointer'}} value={catForm.color} onChange={e=>setCatForm(f=>({...f,color:e.target.value}))}/></Field>
+            <Field label="Billing Cycle">
+              <select style={s.input} value={catForm.cycle||'monthly'} onChange={e=>setCatForm(f=>({...f,cycle:e.target.value}))}>
+                {BILL_CYCLES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </Field>
+          </div>
+          {/* Custom tracking fields builder */}
+          <div style={{padding:14,borderRadius:8,border:'1px solid var(--border)',background:'var(--surface)',marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--ink)',marginBottom:10}}>Custom Tracking Fields</div>
+            {catForm.custom_fields.length>0&&(
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
+                {catForm.custom_fields.map(f=>(
+                  <span key={f.key} style={{display:'inline-flex',alignItems:'center',gap:5,padding:'4px 10px',background:'var(--card)',border:'1px solid var(--border)',borderRadius:6,fontSize:12}}>
+                    <span style={{color:'var(--warm-gray)',fontSize:10}}>[{f.type}]</span> {f.label}
+                    <button onClick={()=>removeCustomField(f.key)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--terracotta)',fontSize:14,lineHeight:1,padding:0}}>×</button>
+                  </span>
+                ))}
               </div>
+            )}
+            <div style={{display:'flex',gap:8,alignItems:'flex-end'}}>
+              <Field label="Field Name"><input style={{...s.input,width:160}} value={newFieldName} onChange={e=>setNewFieldName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addCustomField()} placeholder="e.g. Usage (kWh)"/></Field>
+              <Field label="Type">
+                <select style={{...s.input,width:100}} value={newFieldType} onChange={e=>setNewFieldType(e.target.value)}>
+                  <option value="number">Number</option>
+                  <option value="text">Text</option>
+                  <option value="date">Date</option>
+                </select>
+              </Field>
+              <button style={{...s.btn('outline'),whiteSpace:'nowrap'}} onClick={addCustomField}>+ Add Field</button>
             </div>
-            <div className="form-grid-2" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-              <Field label="Bill Date"><input style={s.input} type="date" value={billForm.bill_date} onChange={e=>setBillForm(f=>({...f,bill_date:e.target.value}))}/></Field>
-              <Field label="Amount ($)"><input style={s.input} type="number" value={billForm.amount} onChange={e=>setBillForm(f=>({...f,amount:e.target.value}))} placeholder="0.00"/></Field>
-              <Field label="Due Date (optional)"><input style={s.input} type="date" value={billForm.due_date} onChange={e=>setBillForm(f=>({...f,due_date:e.target.value}))}/></Field>
-              <Field label="Status"><div style={{display:'flex',alignItems:'center',gap:10,height:42}}><input type="checkbox" checked={billForm.paid} onChange={e=>setBillForm(f=>({...f,paid:e.target.checked}))} style={{width:18,height:18}}/><span style={{fontSize:14,color:'var(--ink)'}}>Paid</span></div></Field>
-            </div>
-            {(()=>{
-              const cat=categories.find(c=>c.id===billForm.category_id);
-              const fields=getCustomFields(cat);
-              if(!fields.length)return null;
-              return(<div style={{marginBottom:12}}>
-                <div style={{fontSize:12,fontWeight:600,color:'var(--ink)',marginBottom:8}}>Custom Fields</div>
-                <div className="form-grid-2" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-                  {fields.map(f=>(<Field key={f.key} label={f.label}><input style={s.input} type={f.type||'text'} value={billForm.custom_data[f.key]||''} onChange={e=>setBillForm(prev=>({...prev,custom_data:{...prev.custom_data,[f.key]:e.target.value}}))}/></Field>))}
-                </div>
-              </div>);
-            })()}
-            <Field label="Notes"><input style={{...s.input,marginBottom:12}} value={billForm.notes} onChange={e=>setBillForm(f=>({...f,notes:e.target.value}))} placeholder="Optional notes"/></Field>
-            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
-              <button style={s.btn('ghost')} onClick={()=>setShowBillForm(false)}>Cancel</button>
-              <button style={s.btn()} onClick={saveBill}>Save Bill</button>
-            </div>
-          </>)}
-        </div>)}
-      </div>)}
+            <div style={{fontSize:11,color:'var(--warm-gray)',marginTop:8}}>Custom fields appear when entering bills and show as charts in analytics.</div>
+          </div>
+          <button style={s.btn()} onClick={saveCat}>Save Category</button>
+          <button style={{...s.btn('ghost'),marginLeft:8}} onClick={()=>setShowCatForm(false)}>Cancel</button>
+        </div>
+      )}
 
-      {/* Per-Category Analytics Charts */}
+      {/* ── CATEGORY TABS ── */}
+      {categories.length>0&&(
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:20}}>
+          <div onClick={()=>setSelectedCat(null)} style={{padding:'10px 14px',borderRadius:8,cursor:'pointer',border:`2px solid ${!selectedCat?'var(--gold)':'var(--border)'}`,background:!selectedCat?'rgba(201,151,58,0.08)':'var(--card)',minWidth:80,textAlign:'center'}}>
+            <div style={{fontSize:18,marginBottom:2}}>📋</div>
+            <div style={{fontSize:12,fontWeight:!selectedCat?600:400,color:!selectedCat?'var(--gold)':'var(--ink)'}}>All Bills</div>
+          </div>
+          {categories.map(c=>{
+            const cnt=bills.filter(b=>b.category_id===c.id).length;
+            const cycle=BILL_CYCLES.find(x=>x.id===(c.cycle||'monthly'))?.label||'Monthly';
+            return(
+              <div key={c.id} style={{position:'relative'}}>
+                <div onClick={()=>setSelectedCat(c)} style={{padding:'10px 14px',borderRadius:8,cursor:'pointer',border:`2px solid ${selectedCat?.id===c.id?c.color:'var(--border)'}`,background:selectedCat?.id===c.id?c.color+'18':'var(--card)',minWidth:100,textAlign:'center'}}>
+                  <div style={{fontSize:18,marginBottom:2}}>{c.icon}</div>
+                  <div style={{fontSize:12,fontWeight:selectedCat?.id===c.id?600:400,color:selectedCat?.id===c.id?c.color:'var(--ink)'}}>{c.name}</div>
+                  <div style={{fontSize:10,color:'var(--warm-gray)',marginTop:2}}>{cnt} · {cycle}</div>
+                </div>
+                <button onClick={e=>{e.stopPropagation();delCat(c.id);}} style={{position:'absolute',top:-5,right:-5,background:'var(--terracotta)',color:'white',border:'none',borderRadius:'50%',width:17,height:17,fontSize:10,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── BILL ENTRY FORM ── */}
+      {(selectedCat||categories.length>0)&&(
+        <div style={{...s.card,marginBottom:20}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:showBillForm?16:0}}>
+            <h3 style={{...s.sectionTitle,marginBottom:0}}>{editBillId?'Edit Bill Entry':'Add Bill Entry'}</h3>
+            <button style={s.btn('outline')} onClick={()=>{if(showBillForm&&editBillId){setShowBillForm(false);setEditBillId(null);}else openBillForm();}}>
+              {showBillForm?'Cancel':'+ Add Entry'}
+            </button>
+          </div>
+          {showBillForm&&(
+            <div>
+              {/* Category selector */}
+              {!editBillId&&(
+                <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+                  {categories.map(c=>(
+                    <button key={c.id} onClick={()=>setBillForm(f=>({...f,category_id:c.id,custom_data:{}}))} style={{padding:'6px 12px',borderRadius:6,fontSize:12,cursor:'pointer',border:`2px solid ${billForm.category_id===c.id?c.color:'var(--border)'}`,background:billForm.category_id===c.id?c.color+'20':'var(--surface)',color:'var(--ink)'}}>{c.icon} {c.name}</button>
+                  ))}
+                </div>
+              )}
+              {billForm.category_id&&(()=>{
+                const cat=categories.find(c=>c.id===billForm.category_id);
+                const fields=getCustomFields(cat);
+                return(
+                  <>
+                    {/* AI extraction */}
+                    <div style={{padding:14,borderRadius:8,border:'1px solid var(--gold)',background:'rgba(201,151,58,0.04)',marginBottom:12}}>
+                      <div style={{fontWeight:600,fontSize:13,color:'var(--gold)',marginBottom:8}}>🤖 AI Bill Extraction (optional)</div>
+                      <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                        <select value={provider} onChange={e=>setProvider(e.target.value)} style={{padding:'7px 10px',fontSize:13,borderRadius:6,border:'1px solid var(--border)',background:'var(--surface)',color:'var(--ink)'}}>
+                          {PROVIDERS.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+                        </select>
+                        <input type="file" id="billPdfAI" accept=".pdf" style={{display:'none'}} onChange={e=>e.target.files[0]&&analyzeBillPDF(e.target.files[0],billForm.category_id)}/>
+                        <button style={s.btn('outline')} onClick={()=>document.getElementById('billPdfAI').click()} disabled={analyzing}>{analyzing?'⏳ Analyzing...':'📄 Upload & AI Extract'}</button>
+                        {analyzeResult?.ok&&<span style={{fontSize:12,color:'var(--sage)'}}>✓ Fields pre-filled — review below</span>}
+                        {analyzeResult&&!analyzeResult.ok&&<span style={{fontSize:12,color:'var(--terracotta)'}}>⚠ {analyzeResult.msg}</span>}
+                      </div>
+                    </div>
+                    {/* Core fields */}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+                      <Field label="Bill Date"><input style={s.input} type="date" value={billForm.bill_date} onChange={e=>setBillForm(f=>({...f,bill_date:e.target.value}))}/></Field>
+                      <Field label="Amount ($)"><input style={s.input} type="number" value={billForm.amount} onChange={e=>setBillForm(f=>({...f,amount:e.target.value}))} placeholder="0.00"/></Field>
+                      <Field label="Due Date (optional)"><input style={s.input} type="date" value={billForm.due_date} onChange={e=>setBillForm(f=>({...f,due_date:e.target.value}))}/></Field>
+                      <Field label="Status"><div style={{display:'flex',alignItems:'center',gap:10,height:42}}><input type="checkbox" checked={!!billForm.paid} onChange={e=>setBillForm(f=>({...f,paid:e.target.checked}))} style={{width:18,height:18}}/><span style={{fontSize:14,color:'var(--ink)'}}>Paid</span></div></Field>
+                    </div>
+                    {/* Custom tracking fields */}
+                    {fields.length>0&&(
+                      <div style={{marginBottom:12}}>
+                        <div style={{fontSize:12,fontWeight:600,color:'var(--ink)',marginBottom:8}}>Custom Tracking Fields</div>
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                          {fields.map(f=>(
+                            <Field key={f.key} label={f.label}>
+                              <input style={s.input} type={f.type==='date'?'date':'text'} value={billForm.custom_data[f.key]||''} onChange={e=>setBillForm(prev=>({...prev,custom_data:{...prev.custom_data,[f.key]:e.target.value}}))}/>
+                            </Field>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <Field label="Notes"><input style={{...s.input,marginBottom:14}} value={billForm.notes} onChange={e=>setBillForm(f=>({...f,notes:e.target.value}))} placeholder="Optional notes"/></Field>
+                    <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                      <button style={s.btn('ghost')} onClick={()=>{setShowBillForm(false);setEditBillId(null);}}>Cancel</button>
+                      <button style={s.btn()} onClick={saveBill}>{editBillId?'Update Bill':'Save Bill'}</button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ANALYTICS CHARTS (selected category) ── */}
       {selectedCat&&catBills.length>0&&(()=>{
         const fields=getCustomFields(selectedCat);
         const chartData=buildChartData(selectedCat,catBills);
         const cycleLabel=BILL_CYCLES.find(c=>c.id===(selectedCat.cycle||'monthly'))?.label||'Monthly';
         const totalSpend=catBills.reduce((s,b)=>s+parseFloat(b.amount||0),0);
         const avgSpend=catBills.length>0?totalSpend/catBills.length:0;
-        const lastBill=catBills.sort((a,b)=>b.bill_date.localeCompare(a.bill_date))[0];
+        const lastBill=[...catBills].sort((a,b)=>b.bill_date.localeCompare(a.bill_date))[0];
         return(
           <div style={{marginBottom:20}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
-              <span style={{fontSize:24}}>{selectedCat.icon}</span>
-              <div><h3 style={{...s.sectionTitle,marginBottom:0}}>{selectedCat.name} Analytics</h3><div style={{fontSize:12,color:'var(--warm-gray)'}}>{cycleLabel} billing</div></div>
-            </div>
-            {/* Stat row */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:16}}>
               <div style={s.statCard(selectedCat.color)}><div style={s.statLabel}>Total Spent</div><div style={s.statValue}>{fmt(totalSpend)}</div><div style={s.statSub}>{catBills.length} entries</div></div>
-              <div style={s.statCard(selectedCat.color)}><div style={s.statLabel}>Avg per Cycle</div><div style={s.statValue}>{fmt(avgSpend)}</div><div style={s.statSub}>Per {cycleLabel.toLowerCase()}</div></div>
+              <div style={s.statCard(selectedCat.color)}><div style={s.statLabel}>Avg per {cycleLabel}</div><div style={s.statValue}>{fmt(avgSpend)}</div></div>
               <div style={s.statCard(selectedCat.color)}><div style={s.statLabel}>Last Entry</div><div style={s.statValue}>{fmt(lastBill?.amount)}</div><div style={s.statSub}>{fmtDate(lastBill?.bill_date)}</div></div>
             </div>
-            {/* Charts */}
             {chartData.length>1&&(
               <div style={{display:'grid',gridTemplateColumns:fields.length>0?'1fr 1fr':'1fr',gap:16,marginBottom:16}}>
                 <div style={s.card}>
-                  <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--ink)'}}>Cost per {cycleLabel} Cycle</div>
+                  <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>Cost per {cycleLabel} Cycle</div>
                   <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={chartData} margin={{top:0,right:0,left:-20,bottom:0}}>
-                      <defs><linearGradient id={`billGrad${selectedCat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={selectedCat.color} stopOpacity={0.3}/><stop offset="95%" stopColor={selectedCat.color} stopOpacity={0}/></linearGradient></defs>
+                      <defs><linearGradient id={`bg${selectedCat.id}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={selectedCat.color} stopOpacity={0.3}/><stop offset="95%" stopColor={selectedCat.color} stopOpacity={0}/></linearGradient></defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)"/>
                       <XAxis dataKey="date" tick={{fontSize:10,fill:'var(--warm-gray)'}}/>
                       <YAxis tick={{fontSize:10,fill:'var(--warm-gray)'}}/>
                       <Tooltip formatter={v=>fmt(v)} contentStyle={{background:'var(--card)',border:'1px solid var(--border)',color:'var(--ink)'}}/>
-                      <Area type="monotone" dataKey="amount" stroke={selectedCat.color} fill={`url(#billGrad${selectedCat.id})`} name="Amount"/>
+                      <Area type="monotone" dataKey="amount" stroke={selectedCat.color} fill={`url(#bg${selectedCat.id})`} name="Amount"/>
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
                 {fields.slice(0,3).map((f,fi)=>(
                   <div key={f.key} style={s.card}>
-                    <div style={{fontSize:13,fontWeight:600,marginBottom:8,color:'var(--ink)'}}>{f.label} per Cycle</div>
+                    <div style={{fontSize:13,fontWeight:600,marginBottom:8}}>{f.label} per Cycle</div>
                     <ResponsiveContainer width="100%" height={200}>
                       <LineChart data={chartData} margin={{top:0,right:0,left:-20,bottom:0}}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)"/>
@@ -941,43 +1043,58 @@ function BillsView({initialCatId}){
         );
       })()}
 
-      {/* Bills Table */}
-      {catBills.length>0&&(<div style={s.card}>
-        <h3 style={s.sectionTitle}>{selectedCat?`${selectedCat.icon} ${selectedCat.name} Bills`:'All Bills'} ({catBills.length})</h3>
-        <div style={{overflowX:'auto'}}>
-          <table style={s.table}>
-            <thead><tr>
-              <th style={s.th}>Category</th><th style={s.th}>Date</th><th style={s.th}>Amount</th><th style={s.th}>Due</th>
-              <th style={s.th}>Status</th><th style={s.th}>Docs</th><th style={s.th}></th>
-            </tr></thead>
-            <tbody>{[...catBills].sort((a,b)=>b.bill_date.localeCompare(a.bill_date)).map(b=>{
-              const cat=categories.find(c=>c.id===b.category_id);
-              return(<tr key={b.id}>
-                <td style={s.td}><span style={{color:cat?.color||'var(--warm-gray)'}}>{cat?.icon||'💼'} {cat?.name||'Unknown'}</span></td>
-                <td style={s.td}>{fmtDate(b.bill_date)}</td>
-                <td style={{...s.td,fontWeight:600}}>{fmt(b.amount)}</td>
-                <td style={s.td}>{fmtDate(b.due_date)}</td>
-                <td style={s.td}><span style={s.badge(b.paid?'green':'orange')} onClick={()=>togglePaid(b)} title="Click to toggle">{b.paid?'✓ Paid':'Unpaid'}</span></td>
-                <td style={s.td}>
-                  <DocumentUploader billId={b.id} compact onUploaded={()=>setDocRefresh(x=>x+1)}/>
-                  <DocumentList billId={b.id} refresh={docRefresh}/>
-                </td>
-                <td style={s.td}><button style={{...s.btn('sm'),background:'#FEF3F0',color:'var(--terracotta)'}} onClick={()=>delBill(b.id)}>Del</button></td>
-              </tr>);
-            })}</tbody>
-          </table>
+      {/* ── BILLS TABLE ── */}
+      {catBills.length>0&&(
+        <div style={s.card}>
+          <h3 style={s.sectionTitle}>{selectedCat?`${selectedCat.icon} ${selectedCat.name}`:'All Bills'} ({catBills.length})</h3>
+          <div style={{overflowX:'auto'}}>
+            <table style={s.table}>
+              <thead><tr>
+                <th style={s.th}>Category</th><th style={s.th}>Date</th><th style={s.th}>Amount</th>
+                <th style={s.th}>Due</th><th style={s.th}>Status</th><th style={s.th}>Docs</th><th style={s.th}></th>
+              </tr></thead>
+              <tbody>{[...catBills].sort((a,b)=>b.bill_date.localeCompare(a.bill_date)).map(b=>{
+                const cat=categories.find(c=>c.id===b.category_id);
+                return(
+                  <tr key={b.id}>
+                    <td style={s.td}><span style={{color:cat?.color||'var(--warm-gray)'}}>{cat?.icon} {cat?.name||'—'}</span></td>
+                    <td style={s.td}>{fmtDate(b.bill_date)}</td>
+                    <td style={{...s.td,fontWeight:600}}>{fmt(b.amount)}</td>
+                    <td style={s.td}>{fmtDate(b.due_date)}</td>
+                    <td style={s.td}><span style={{...s.badge(b.paid?'green':'orange'),cursor:'pointer'}} onClick={()=>togglePaid(b)} title="Click to toggle">{b.paid?'✓ Paid':'Unpaid'}</span></td>
+                    <td style={s.td}>
+                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                        <DocumentUploader billId={b.id} compact onUploaded={()=>setDocRefresh(x=>x+1)}/>
+                        <DocumentList billId={b.id} refresh={docRefresh} paperlessBaseUrl={paperlessUrl}/>
+                        <StorePDFSection loanId={null} billId={b.id} compact onStored={()=>setDocRefresh(x=>x+1)}/>
+                      </div>
+                    </td>
+                    <td style={s.td}>
+                      <div style={{display:'flex',gap:4}}>
+                        <button style={s.btn('sm')} onClick={()=>openBillForm(b)}>Edit</button>
+                        <button style={{...s.btn('sm'),background:'#FEF3F0',color:'var(--terracotta)'}} onClick={()=>delBill(b.id)}>Del</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>
         </div>
-      </div>)}
+      )}
 
-      {categories.length===0&&(<div style={{...s.card,textAlign:'center',padding:'60px'}}>
-        <div style={{fontSize:48,marginBottom:16}}>💡</div>
-        <h2 style={{fontFamily:"'DM Serif Display',serif",marginBottom:8,color:'var(--ink)'}}>No Bill Categories Yet</h2>
-        <p style={{color:'var(--warm-gray)',marginBottom:20}}>Add a category to start tracking bills like electricity, water, or insurance.</p>
-        <button style={s.btn()} onClick={()=>setShowCatForm(true)}>Add Your First Category</button>
-      </div>)}
+      {categories.length===0&&(
+        <div style={{...s.card,textAlign:'center',padding:'60px'}}>
+          <div style={{fontSize:48,marginBottom:16}}>💡</div>
+          <h2 style={{fontFamily:"'DM Serif Display',serif",marginBottom:8,color:'var(--ink)'}}>No Bill Categories Yet</h2>
+          <p style={{color:'var(--warm-gray)',marginBottom:20}}>Add a category to track bills like electricity, water, or insurance.</p>
+          <button style={s.btn()} onClick={()=>setShowCatForm(true)}>Add Your First Category</button>
+        </div>
+      )}
     </div>
   );
 }
+
 // ─── LOANS MANAGER ────────────────────────────────────────────────────────────
 function LoansManager({loans,onRefresh,onSelect}){
   const [showForm,setShowForm]=useState(false);
@@ -996,6 +1113,31 @@ function LoansManager({loans,onRefresh,onSelect}){
         <div><div style={{fontFamily:"'DM Serif Display',serif",fontSize:20,marginBottom:4,color:'var(--ink)'}}>{lt.icon} {loan.name} <span style={{...s.badge('blue'),fontSize:10,verticalAlign:'middle',marginLeft:4}}>{lt.label}</span></div><div style={{fontSize:13,color:'var(--warm-gray)'}}>{fmt(loan.original_amount)} · {parseFloat(loan.interest_rate)}% · {parseInt(loan.loan_term_months)/12}yr · Started {fmtDate(loan.start_date)}</div><div style={{fontSize:13,marginTop:4,color:'var(--ink)'}}>Balance: <strong>{fmt(loan.current_balance||loan.original_amount)}</strong> · Monthly: <strong>{fmt(loan.monthly_payment)}</strong></div></div>
         <div className="loan-card-btns" style={{display:'flex',gap:8}}><button style={s.btn('outline')} onClick={()=>onSelect(loan)}>View</button><button style={s.btn('ghost')} onClick={()=>{setEditLoan(loan);setShowForm(true);window.scrollTo(0,0);}}>Edit</button><button style={{...s.btn('sm'),background:'#FEF3F0',color:'var(--terracotta)'}} onClick={()=>del(loan.id)}>Delete</button></div>
       </div>);})}
+    </div>
+  );
+}
+
+// ─── PAPERLESS SETTINGS ───────────────────────────────────────────────────────
+function PaperlessSettings(){
+  const [url,setUrl]=useState('');
+  const [saved,setSaved]=useState('');
+  const [msg,setMsg]=useState(null);
+  useEffect(()=>{
+    authFetch(`${API}/settings`).then(r=>r.json()).then(d=>{
+      const v=d?.paperless_ngx_url||'';
+      setUrl(v);setSaved(v);
+    }).catch(()=>{});
+  },[]);
+  const save=async()=>{
+    await authFetch(`${API}/settings`,{method:'POST',body:JSON.stringify({paperless_ngx_url:url})});
+    setSaved(url);setMsg(url?'✓ Saved':'✓ Cleared');setTimeout(()=>setMsg(null),2500);
+  };
+  return(
+    <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+      <input style={{...s.input,flex:1,maxWidth:420}} value={url} onChange={e=>setUrl(e.target.value)} placeholder="http://your-server:8000"/>
+      <button style={s.btn()} onClick={save}>Save</button>
+      {saved&&<a href={saved} target="_blank" rel="noreferrer" style={{...s.btn('outline'),textDecoration:'none',fontSize:13,padding:'9px 16px',whiteSpace:'nowrap'}}>Open Paperless ↗</a>}
+      {msg&&<span style={{fontSize:13,color:'var(--sage)'}}>{msg}</span>}
     </div>
   );
 }
@@ -1032,6 +1174,12 @@ function Settings({theme,setTheme,onLogout}){
           <Field label="Confirm New Password"><input style={s.input} type="password" value={pwForm.confirm} onChange={e=>setPwForm(f=>({...f,confirm:e.target.value}))}/></Field>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:16}}><button style={s.btn()} onClick={changePw}>Change Password</button>{pwStatus&&<span style={{fontSize:13,color:pwStatus.ok?'var(--sage)':'var(--terracotta)'}}>{pwStatus.msg}</span>}<button style={{...s.btn('ghost'),marginLeft:'auto'}} onClick={onLogout}>Sign Out</button></div>
+      </div>
+      {/* Paperless-NGX */}
+      <div style={{...s.card,marginBottom:20}}>
+        <h3 style={{...s.sectionTitle,marginBottom:4}}>🗂️ Paperless-NGX Integration</h3>
+        <p style={{fontSize:13,color:'var(--warm-gray)',marginBottom:16}}>Enter your Paperless-NGX server URL to enable per-document links. An "Open Paperless" button will appear in the Documents tab.</p>
+        <PaperlessSettings/>
       </div>
       {/* Support */}
       <div style={{...s.card,marginBottom:20}}>
@@ -1214,8 +1362,7 @@ function DocumentsView({loans,navigate}){
   const [allPayments,setAllPayments]=useState([]);
   const [editDoc,setEditDoc]=useState(null);
   const [editForm,setEditForm]=useState({});
-  const [paperlessUrl,setPaperlessUrl]=useState('');
-  const [paperlessMode,setPaperlessMode]=useState(false);
+  const [paperlessBase,setPaperlessBase]=useState('');
   const [saving,setSaving]=useState(false);
   const [filterLoan,setFilterLoan]=useState('');
   const [filterType,setFilterType]=useState('');
@@ -1223,34 +1370,30 @@ function DocumentsView({loans,navigate}){
   const load=()=>{
     authFetch(`${API}/documents`).then(r=>r.json()).then(setDocs).catch(()=>setDocs([]));
     authFetch(`${API}/payments`).then(r=>r.json()).then(setAllPayments).catch(()=>setAllPayments([]));
-    authFetch(`${API}/settings`).then(r=>r.json()).then(d=>{
-      const url=d.find?.(s=>s.key==='paperless_ngx_url')?.value||'';
-      setPaperlessUrl(url);
-      setPaperlessMode(!!url);
-    }).catch(()=>{});
+    authFetch(`${API}/settings`).then(r=>r.json()).then(d=>{setPaperlessBase(d?.paperless_ngx_url||'');}).catch(()=>{});
   };
   useEffect(()=>{load();},[]);
 
-  const savePaperlessUrl=async()=>{
-    await authFetch(`${API}/settings`,{method:'POST',body:JSON.stringify({paperless_ngx_url:paperlessUrl})});
-    setPaperlessMode(!!paperlessUrl);
-    alert('Paperless-NGX URL saved!');
-  };
-
   const startEdit=(doc)=>{
     setEditDoc(doc.id);
-    setEditForm({original_name:doc.original_name,description:doc.description||'',payment_id:doc.payment_id||''});
+    setEditForm({
+      original_name:doc.original_name||'',
+      description:doc.description||'',
+      payment_id:doc.payment_id||'',
+      paperless_url:doc.paperless_url||'',
+    });
   };
   const saveEdit=async(id)=>{
     setSaving(true);
     await authFetch(`${API}/documents/${id}`,{method:'PUT',body:JSON.stringify({
       original_name:editForm.original_name||undefined,
       description:editForm.description||undefined,
-      payment_id:editForm.payment_id?parseInt(editForm.payment_id):null
+      payment_id:editForm.payment_id?parseInt(editForm.payment_id):null,
+      paperless_url:editForm.paperless_url||null,
     })});
     setSaving(false);setEditDoc(null);load();
   };
-  const del=async(id)=>{if(!confirm('Delete this document?'))return;await authFetch(`${API}/documents/${id}`,{method:'DELETE'});load();};
+  const del=async(id)=>{if(!confirm('Delete this document permanently?'))return;await authFetch(`${API}/documents/${id}`,{method:'DELETE'});load();};
   const icon=(name)=>/\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(name)?'🖼️':'📄';
 
   const filtered=docs.filter(d=>{
@@ -1262,38 +1405,21 @@ function DocumentsView({loans,navigate}){
 
   return(
     <div>
-      <div style={s.pageHeader}><h1 style={s.pageTitle}>📁 Documents</h1><p style={s.pageSub}>All files stored on this server — {docs.length} total</p></div>
-
-      {/* Paperless-NGX Integration */}
-      <div style={{...s.card,marginBottom:20,border:'1px solid var(--border)'}}>
-        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
-          <span style={{fontSize:20}}>🗂️</span>
-          <div><div style={{fontWeight:600,color:'var(--ink)'}}>Document Storage Mode</div><div style={{fontSize:12,color:'var(--warm-gray)'}}>Store files locally or link to your Paperless-NGX server</div></div>
-        </div>
-        <div style={{display:'flex',gap:12,marginBottom:12}}>
-          <button style={{...s.btn(paperlessMode?'ghost':'outline'),fontSize:13}} onClick={()=>{setPaperlessMode(false);}}>📂 Local Storage</button>
-          <button style={{...s.btn(paperlessMode?'outline':'ghost'),fontSize:13}} onClick={()=>setPaperlessMode(true)}>🗂️ Paperless-NGX</button>
-        </div>
-        {paperlessMode&&(
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <input style={{...s.input,flex:1}} value={paperlessUrl} onChange={e=>setPaperlessUrl(e.target.value)} placeholder="http://your-server:8000 (Paperless-NGX URL)"/>
-            <button style={s.btn()} onClick={savePaperlessUrl}>Save URL</button>
-            {paperlessUrl&&<a href={paperlessUrl} target="_blank" rel="noreferrer" style={{...s.btn('outline'),textDecoration:'none',whiteSpace:'nowrap',fontSize:13,padding:'9px 16px'}}>Open Paperless ↗</a>}
-          </div>
-        )}
+      <div style={{...s.pageHeader,display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+        <div><h1 style={s.pageTitle}>📁 Documents</h1><p style={s.pageSub}>All files on this server — {docs.length} total{paperlessBase&&<> · <a href={paperlessBase} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none'}}>Open Paperless ↗</a></>}</p></div>
       </div>
 
       {/* Filters */}
       <div style={{...s.card,marginBottom:20}}>
         <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'flex-end'}}>
           <Field label="Filter by Loan">
-            <select style={{...s.input,width:180}} value={filterLoan} onChange={e=>setFilterLoan(e.target.value)}>
+            <select style={{...s.input,width:190}} value={filterLoan} onChange={e=>setFilterLoan(e.target.value)}>
               <option value="">All Loans</option>
               {loans.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
             </select>
           </Field>
           <Field label="Filter by Type">
-            <select style={{...s.input,width:150}} value={filterType} onChange={e=>setFilterType(e.target.value)}>
+            <select style={{...s.input,width:140}} value={filterType} onChange={e=>setFilterType(e.target.value)}>
               <option value="">All Types</option>
               {docTypes.map(t=><option key={t} value={t}>{t}</option>)}
             </select>
@@ -1302,41 +1428,49 @@ function DocumentsView({loans,navigate}){
         </div>
       </div>
 
-      {/* Documents table */}
+      {/* Table */}
       <div style={s.card}>
-        <h3 style={s.sectionTitle}>All Documents ({filtered.length})</h3>
-        {filtered.length===0?<p style={{color:'var(--warm-gray)',fontSize:13}}>No documents found.</p>:(
+        <h3 style={s.sectionTitle}>Documents ({filtered.length})</h3>
+        {filtered.length===0
+          ?<p style={{color:'var(--warm-gray)',fontSize:13}}>No documents found. Upload files through a loan payment, escrow entry, or bill entry.</p>
+          :(
           <div style={{overflowX:'auto'}}>
             <table style={s.table}>
               <thead><tr>
-                <th style={s.th}>File</th>
+                <th style={s.th}>File / Description</th>
                 <th style={s.th}>Type</th>
                 <th style={s.th}>Loan</th>
                 <th style={s.th}>Linked Payment</th>
+                <th style={s.th}>Paperless</th>
                 <th style={s.th}>Uploaded</th>
                 <th style={s.th}></th>
               </tr></thead>
               <tbody>{filtered.map(d=>(
                 <tr key={d.id}>
+                  {/* File column */}
                   <td style={s.td}>
                     {editDoc===d.id?(
-                      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                      <div style={{display:'flex',flexDirection:'column',gap:5}}>
                         <input style={{...s.input,fontSize:12}} value={editForm.original_name} onChange={e=>setEditForm(f=>({...f,original_name:e.target.value}))} placeholder="File name"/>
-                        <input style={{...s.input,fontSize:12}} value={editForm.description} onChange={e=>setEditForm(f=>({...f,description:e.target.value}))} placeholder="Description"/>
+                        <input style={{...s.input,fontSize:12}} value={editForm.description} onChange={e=>setEditForm(f=>({...f,description:e.target.value}))} placeholder="Description (optional)"/>
                       </div>
                     ):(
-                      paperlessMode&&paperlessUrl?(
-                        <a href={`${paperlessUrl}/documents?search=${encodeURIComponent(d.original_name)}`} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none',display:'flex',alignItems:'center',gap:6}}>{icon(d.original_name)} {d.description||d.original_name} ↗</a>
-                      ):(
-                        <a href={`/statements/${d.filename}`} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none',display:'flex',alignItems:'center',gap:6}}>{icon(d.original_name)} {d.description||d.original_name}</a>
-                      )
+                      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                        <a href={`/statements/${d.filename}`} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none',display:'flex',alignItems:'center',gap:5,fontSize:13}}>
+                          {icon(d.original_name)} {d.description||d.original_name}
+                        </a>
+                        {d.description&&d.description!==d.original_name&&<span style={{fontSize:11,color:'var(--warm-gray)'}}>{d.original_name}</span>}
+                      </div>
                     )}
                   </td>
+                  {/* Type */}
                   <td style={s.td}><span style={s.badge('blue')}>{d.doc_type}</span></td>
+                  {/* Loan */}
                   <td style={s.td}><span style={{color:'var(--warm-gray)',fontSize:12}}>{d.loan_name||'—'}</span></td>
+                  {/* Linked payment */}
                   <td style={s.td}>
                     {editDoc===d.id?(
-                      <select style={{...s.input,fontSize:12}} value={editForm.payment_id} onChange={e=>setEditForm(f=>({...f,payment_id:e.target.value}))}>
+                      <select style={{...s.input,fontSize:12,minWidth:180}} value={editForm.payment_id} onChange={e=>setEditForm(f=>({...f,payment_id:e.target.value}))}>
                         <option value="">No payment link</option>
                         {allPayments.filter(p=>!d.loan_id||p.loan_id===d.loan_id).map(p=>(
                           <option key={p.id} value={p.id}>{p.loan_name} – {fmtDate(p.payment_date)} – {fmt(p.total_payment)}</option>
@@ -1344,16 +1478,34 @@ function DocumentsView({loans,navigate}){
                       </select>
                     ):(
                       d.payment_date?(
-                        <div style={{display:'flex',alignItems:'center',gap:8}}>
-                          <span style={{fontSize:12}}>{fmtDate(d.payment_date)}{d.statement_month?` (${d.statement_month})`:''}</span>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{fontSize:12}}>{fmtDate(d.payment_date)}</span>
                           <button style={{background:'none',border:'1px solid var(--border)',borderRadius:4,fontSize:10,color:'var(--gold)',cursor:'pointer',padding:'2px 6px'}} onClick={()=>navigate('loan-payments',d.loan_id)}>→ View</button>
                         </div>
                       ):<span style={{color:'var(--warm-gray)',fontSize:12}}>—</span>
                     )}
                   </td>
-                  <td style={s.td}><span style={{fontSize:12}}>{new Date(d.uploaded_at).toLocaleDateString()}</span></td>
+                  {/* Paperless URL */}
                   <td style={s.td}>
-                    <div style={{display:'flex',gap:6}}>
+                    {editDoc===d.id?(
+                      <input style={{...s.input,fontSize:12,minWidth:180}} value={editForm.paperless_url} onChange={e=>setEditForm(f=>({...f,paperless_url:e.target.value}))} placeholder="https://paperless/documents/42/"/>
+                    ):(
+                      d.paperless_url?(
+                        <a href={d.paperless_url} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none',fontSize:12,display:'flex',alignItems:'center',gap:4}}>
+                          🗂️ Open ↗
+                        </a>
+                      ):(
+                        paperlessBase
+                          ?<span style={{color:'var(--warm-gray)',fontSize:11}}>No link set</span>
+                          :<span style={{color:'var(--warm-gray)',fontSize:11}}>—</span>
+                      )
+                    )}
+                  </td>
+                  {/* Uploaded */}
+                  <td style={s.td}><span style={{fontSize:12}}>{new Date(d.uploaded_at).toLocaleDateString()}</span></td>
+                  {/* Actions */}
+                  <td style={s.td}>
+                    <div style={{display:'flex',gap:5}}>
                       {editDoc===d.id?(
                         <>
                           <button style={s.btn('sm')} onClick={()=>saveEdit(d.id)} disabled={saving}>{saving?'…':'Save'}</button>
@@ -1376,6 +1528,7 @@ function DocumentsView({loans,navigate}){
     </div>
   );
 }
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App(){
   const [authed,setAuthed]=useState(!!localStorage.getItem('miq-token'));

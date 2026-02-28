@@ -153,6 +153,7 @@ db.exec(`
   `ALTER TABLE loan_documents ADD COLUMN bill_id INTEGER`,
   `ALTER TABLE settings ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`,
   `ALTER TABLE bill_categories ADD COLUMN cycle TEXT DEFAULT 'monthly'`,
+  `ALTER TABLE loan_documents ADD COLUMN paperless_url TEXT`,
 ].forEach(sql => { try { db.prepare(sql).run(); } catch (e) {} });
 
 console.log('Database initialized at ' + DB_PATH);
@@ -298,9 +299,13 @@ app.get('/api/settings', (req,res) => {
   res.json(s);
 });
 app.post('/api/settings', (req,res) => {
-  const allowed=['claude_api_key','openai_api_key','gemini_api_key','copilot_api_key'];
+  const allowed=['claude_api_key','openai_api_key','gemini_api_key','copilot_api_key','paperless_ngx_url'];
   const updates=[];
-  for(const [k,v] of Object.entries(req.body)){if(!allowed.includes(k))continue;if(v&&v!=='••••••••••••••••'){setSetting(k,v);updates.push(k);}}
+  for(const [k,v] of Object.entries(req.body)){
+    if(!allowed.includes(k))continue;
+    if(k==='paperless_ngx_url'){setSetting(k,v||'');updates.push(k);} // allow empty string to clear
+    else if(v&&v!=='••••••••••••••••'){setSetting(k,v);updates.push(k);}
+  }
   res.json({success:true,updated:updates});
 });
 app.delete('/api/settings/:key', (req,res) => {
@@ -513,24 +518,47 @@ app.get('/api/loans/:id/analytics', (req,res) => {
   const loan=db.prepare('SELECT * FROM loans WHERE id=?').get(req.params.id);
   if(!loan)return res.status(404).json({error:'Loan not found'});
   const payments=db.prepare('SELECT * FROM payments WHERE loan_id=? ORDER BY payment_date ASC').all(req.params.id);
-  const totalPaid=payments.reduce((s,p)=>s+p.total_payment,0);
-  const totalPrincipalPaid=payments.reduce((s,p)=>s+p.principal+p.extra_principal,0);
-  const totalInterestPaid=payments.reduce((s,p)=>s+p.interest,0);
-  const totalEscrowPaid=payments.reduce((s,p)=>s+p.escrow,0);
+  const n=v=>parseFloat(v)||0; // safe number parser - never returns NaN
+  const totalPaid=payments.reduce((s,p)=>s+n(p.total_payment),0);
+  const totalPrincipalPaid=payments.reduce((s,p)=>s+n(p.principal)+n(p.extra_principal),0);
+  const totalInterestPaid=payments.reduce((s,p)=>s+n(p.interest),0);
+  const totalEscrowPaid=payments.reduce((s,p)=>s+n(p.escrow),0);
   const mostRecent=[...payments].sort((a,b)=>new Date(b.payment_date)-new Date(a.payment_date))[0];
-  const currentBalance=mostRecent?.ending_balance??(loan.original_amount-totalPrincipalPaid);
-  const monthlyRate=loan.interest_rate/100/12;
+  // Use ending_balance from most recent payment if available, otherwise derive from principal paid
+  const currentBalance=mostRecent?.ending_balance!=null
+    ? n(mostRecent.ending_balance)
+    : Math.max(0, n(loan.original_amount)-totalPrincipalPaid);
+  const monthlyRate=n(loan.interest_rate)/100/12;
+  const monthlyPayment=n(loan.monthly_payment);
   let projectedMonths=0,remaining=currentBalance,projectedInterest=0;
-  while(remaining>0.01&&projectedMonths<600){const ic=remaining*monthlyRate;remaining-=Math.min(loan.monthly_payment-ic,remaining);projectedInterest+=ic;projectedMonths++;}
+  if(monthlyPayment>0){
+    while(remaining>0.01&&projectedMonths<600){
+      const ic=remaining*monthlyRate;
+      const principal=monthlyPayment-ic;
+      if(principal<=0)break; // payment doesn't cover interest - stop
+      remaining=Math.max(0,remaining-principal);
+      projectedInterest+=ic;
+      projectedMonths++;
+    }
+  }
   const lastDate=mostRecent?new Date(mostRecent.payment_date):new Date(loan.start_date);
   const projectedPayoffDate=new Date(lastDate);
   projectedPayoffDate.setMonth(projectedPayoffDate.getMonth()+projectedMonths);
-  let origBalance=loan.original_amount,origInterest=0,origMonths=0;
-  while(origBalance>0.01&&origMonths<600){const ic=origBalance*monthlyRate;origBalance-=(loan.monthly_payment-ic);origInterest+=ic;origMonths++;}
+  let origBalance=n(loan.original_amount),origInterest=0,origMonths=0;
+  if(monthlyPayment>0){
+    while(origBalance>0.01&&origMonths<600){
+      const ic=origBalance*monthlyRate;
+      const principal=monthlyPayment-ic;
+      if(principal<=0)break;
+      origBalance=Math.max(0,origBalance-principal);
+      origInterest+=ic;
+      origMonths++;
+    }
+  }
   res.json({loan,totalPaid,totalPrincipalPaid,totalInterestPaid,totalEscrowPaid,currentBalance,projectedMonths,
     projectedPayoffDate:projectedPayoffDate.toISOString().split('T')[0],projectedRemainingInterest:projectedInterest,
     originalLoanTermMonths:loan.loan_term_months,originalTotalInterest:origInterest,
-    monthsAhead:loan.loan_term_months-payments.length-projectedMonths,paymentCount:payments.length});
+    monthsAhead:Math.max(0,loan.loan_term_months-payments.length-projectedMonths),paymentCount:payments.length});
 });
 
 // PAYOFF CALCULATOR
@@ -699,14 +727,15 @@ app.get('/api/documents', auth, (req,res) => {
 
 // Edit document metadata (name, description, payment link)
 app.put('/api/documents/:id', auth, (req,res) => {
-  const {original_name, description, payment_id} = req.body;
+  const {original_name, description, payment_id, paperless_url} = req.body;
   const doc = db.prepare('SELECT * FROM loan_documents WHERE id=?').get(req.params.id);
   if(!doc) return res.status(404).json({error:'Not found'});
   db.prepare(`UPDATE loan_documents SET
     original_name=COALESCE(?,original_name),
     description=COALESCE(?,description),
-    payment_id=?
-    WHERE id=?`).run(original_name||null, description||null, payment_id||null, req.params.id);
+    payment_id=?,
+    paperless_url=?
+    WHERE id=?`).run(original_name||null, description||null, payment_id||null, paperless_url||null, req.params.id);
   res.json(db.prepare('SELECT * FROM loan_documents WHERE id=?').get(req.params.id));
 });
 
