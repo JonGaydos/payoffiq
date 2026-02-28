@@ -45,6 +45,81 @@ router.get('/:id', (req, res) => {
   });
 });
 
+// POST /api/documents/link — link to an external document (Paperless-NGX, URL)
+router.post('/link', (req, res) => {
+  const { title, url, category, subcategory, linked_type, linked_id, notes, tags } = req.body;
+  if (!title || !url) return res.status(400).json({ error: 'Title and URL required' });
+
+  const result = db.prepare(`
+    INSERT INTO documents (filename, original_name, mime_type, file_size, file_path, category, subcategory, linked_type, linked_id, tags, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'external_link',
+    title,
+    'application/link',
+    0,
+    url,
+    category || 'general',
+    subcategory || null,
+    linked_type || null,
+    linked_id ? parseInt(linked_id) : null,
+    typeof tags === 'string' ? tags : JSON.stringify(tags || []),
+    notes || null,
+  );
+
+  res.json({ id: result.lastInsertRowid, url });
+});
+
+// POST /api/documents/:id/push-to-paperless — push document to Paperless-NGX
+router.post('/:id/push-to-paperless', async (req, res) => {
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+
+  const { getSetting } = await import('../db/index.js');
+  const paperlessUrl = getSetting('paperless_url');
+  const paperlessToken = getSetting('paperless_api_key');
+
+  if (!paperlessUrl || !paperlessToken) {
+    return res.status(400).json({ error: 'Paperless-NGX not configured. Set URL and API key in Settings.' });
+  }
+
+  const fullPath = path.join(DATA_DIR, doc.file_path);
+  if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'File not found on disk' });
+
+  try {
+    const fileBuffer = fs.readFileSync(fullPath);
+    const FormData = (await import('node-fetch')).default ? null : null;
+    // Use built-in fetch with FormData-like approach
+    const boundary = '----PayoffIQBoundary' + Date.now();
+    const bodyParts = [
+      `--${boundary}\r\nContent-Disposition: form-data; name="document"; filename="${doc.original_name}"\r\nContent-Type: ${doc.mime_type}\r\n\r\n`,
+      fileBuffer,
+      `\r\n--${boundary}\r\nContent-Disposition: form-data; name="title"\r\n\r\n${doc.original_name}`,
+      `\r\n--${boundary}\r\nContent-Disposition: form-data; name="tags"\r\n\r\nPayoffIQ`,
+      `\r\n--${boundary}--\r\n`,
+    ];
+
+    const response = await fetch(`${paperlessUrl.replace(/\/$/, '')}/api/documents/post_document/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${paperlessToken}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      body: Buffer.concat(bodyParts.map(p => typeof p === 'string' ? Buffer.from(p) : p)),
+    });
+
+    if (response.ok) {
+      const result = await response.text();
+      res.json({ success: true, paperless_task: result });
+    } else {
+      const errText = await response.text();
+      res.status(response.status).json({ error: `Paperless error: ${errText}` });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/documents/upload — upload a document
 router.post('/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });

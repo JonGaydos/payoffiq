@@ -77,6 +77,79 @@ router.get('/', (req, res) => {
     };
   });
 
+  // --- Bills (unpaid) ---
+  let billSummaries = [];
+  let totalUnpaidBills = 0;
+  let totalMonthlyBills = 0;
+  try {
+    const categories = db.prepare('SELECT * FROM bill_categories ORDER BY name').all();
+    billSummaries = categories.map(cat => {
+      const unpaid = db.prepare(`
+        SELECT SUM(amount) as total, COUNT(*) as count
+        FROM bills WHERE category_id = ? AND paid = 0
+      `).get(cat.id);
+
+      const lastBill = db.prepare(`
+        SELECT amount, due_date FROM bills WHERE category_id = ? ORDER BY due_date DESC LIMIT 1
+      `).get(cat.id);
+
+      const monthlyAvg = db.prepare(`
+        SELECT AVG(amount) as avg_amount FROM bills WHERE category_id = ?
+      `).get(cat.id);
+
+      const unpaidTotal = parseFloat(unpaid?.total) || 0;
+      const avgAmount = parseFloat(monthlyAvg?.avg_amount) || 0;
+      totalUnpaidBills += unpaidTotal;
+
+      // Estimate monthly cost based on cycle
+      let monthlyEstimate = avgAmount;
+      if (cat.billing_cycle === 'quarterly') monthlyEstimate = avgAmount / 3;
+      else if (cat.billing_cycle === 'annual') monthlyEstimate = avgAmount / 12;
+      else if (cat.billing_cycle === 'semiannual') monthlyEstimate = avgAmount / 6;
+      else if (cat.billing_cycle === 'bimonthly') monthlyEstimate = avgAmount / 2;
+      totalMonthlyBills += monthlyEstimate;
+
+      return {
+        id: cat.id,
+        name: cat.name,
+        icon: cat.icon,
+        billing_cycle: cat.billing_cycle,
+        unpaid_total: Math.round(unpaidTotal * 100) / 100,
+        unpaid_count: unpaid?.count || 0,
+        last_amount: lastBill ? parseFloat(lastBill.amount) : null,
+        last_due_date: lastBill?.due_date || null,
+        monthly_estimate: Math.round(monthlyEstimate * 100) / 100,
+      };
+    }).filter(c => c.last_amount != null); // Only include categories that have bills
+  } catch { /* bills tables may not exist */ }
+
+  // --- Insurance ---
+  let insuranceSummaries = [];
+  let totalAnnualPremiums = 0;
+  try {
+    const policies = db.prepare('SELECT * FROM insurance_policies ORDER BY name').all();
+    insuranceSummaries = policies.map(p => {
+      const lastPayment = db.prepare(`
+        SELECT amount, payment_date FROM insurance_payments
+        WHERE policy_id = ? ORDER BY payment_date DESC LIMIT 1
+      `).get(p.id);
+
+      const annualCost = parseFloat(p.annual_premium) || 0;
+      totalAnnualPremiums += annualCost;
+
+      return {
+        id: p.id,
+        name: p.name,
+        policy_type: p.policy_type,
+        annual_premium: annualCost,
+        monthly_cost: Math.round((annualCost / 12) * 100) / 100,
+        renewal_date: p.renewal_date,
+        last_payment_amount: lastPayment ? parseFloat(lastPayment.amount) : null,
+        last_payment_date: lastPayment?.payment_date || null,
+      };
+    });
+  } catch { /* insurance tables may not exist */ }
+
   // --- Totals ---
   const totalDebt = totalLoanDebt + totalCCDebt;
   const totalPaidDown = totalLoanOriginal - totalLoanDebt;
@@ -87,6 +160,8 @@ router.get('/', (req, res) => {
   const totalMinCardPayments = cardSummaries.reduce((s, c) => {
     return s + calcMinPayment(c.current_balance, c.apr);
   }, 0);
+  const totalMonthlyInsurance = Math.round((totalAnnualPremiums / 12) * 100) / 100;
+  const grandMonthlyObligations = totalMonthlyPayments + totalMinCardPayments + totalMonthlyBills + totalMonthlyInsurance;
 
   // --- Recent activity ---
   const recentPayments = db.prepare(`
@@ -105,9 +180,23 @@ router.get('/', (req, res) => {
     LIMIT 5
   `).all();
 
+  // Recent bills
+  let recentBills = [];
+  try {
+    recentBills = db.prepare(`
+      SELECT b.*, bc.name as category_name, bc.icon
+      FROM bills b
+      JOIN bill_categories bc ON b.category_id = bc.id
+      ORDER BY b.due_date DESC
+      LIMIT 5
+    `).all();
+  } catch { /* table may not exist */ }
+
   res.json({
     loans: loanSummaries,
     credit_cards: cardSummaries,
+    bills: billSummaries,
+    insurance: insuranceSummaries,
     totals: {
       total_debt: Math.round(totalDebt * 100) / 100,
       total_loan_debt: Math.round(totalLoanDebt * 100) / 100,
@@ -121,12 +210,19 @@ router.get('/', (req, res) => {
       net_equity: totalEstimatedValue > 0
         ? Math.round((totalEstimatedValue - totalLoanDebt) * 100) / 100
         : null,
-      monthly_obligations: Math.round((totalMonthlyPayments + totalMinCardPayments) * 100) / 100,
+      monthly_obligations: Math.round(grandMonthlyObligations * 100) / 100,
+      monthly_bills: Math.round(totalMonthlyBills * 100) / 100,
+      monthly_insurance: totalMonthlyInsurance,
+      total_unpaid_bills: Math.round(totalUnpaidBills * 100) / 100,
+      total_annual_premiums: Math.round(totalAnnualPremiums * 100) / 100,
       loan_count: loans.length,
       card_count: cards.length,
+      bill_category_count: billSummaries.length,
+      insurance_count: insuranceSummaries.length,
     },
     recent_payments: recentPayments,
     recent_snapshots: recentSnapshots,
+    recent_bills: recentBills,
   });
 });
 

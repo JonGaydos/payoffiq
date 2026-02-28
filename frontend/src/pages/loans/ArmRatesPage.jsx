@@ -74,27 +74,43 @@ export default function ArmRatesPage() {
 
       {/* Current Rate Info */}
       {loan && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
           <Card accent="var(--color-gold)">
             <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Current Rate</div>
             <div className="text-2xl font-serif font-bold">{loan.interest_rate}%</div>
           </Card>
+          {loan.arm_fixed_months && (
+            <Card>
+              <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Fixed Period</div>
+              <div className="text-2xl font-serif font-bold">{loan.arm_fixed_months} mo</div>
+            </Card>
+          )}
+          {loan.arm_initial_cap && (
+            <Card>
+              <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Initial Cap</div>
+              <div className="text-2xl font-serif font-bold">{loan.arm_initial_cap}%</div>
+              <div className="text-[10px] text-warm-gray">Max at first adjustment</div>
+            </Card>
+          )}
+          {loan.arm_periodic_cap && (
+            <Card>
+              <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Periodic Cap</div>
+              <div className="text-2xl font-serif font-bold">{loan.arm_periodic_cap}%</div>
+              <div className="text-[10px] text-warm-gray">Max per adjustment</div>
+            </Card>
+          )}
           {loan.arm_rate_cap && (
             <Card accent="var(--color-terracotta)">
-              <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Rate Cap</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Lifetime Cap</div>
               <div className="text-2xl font-serif font-bold">{loan.arm_rate_cap}%</div>
+              <div className="text-[10px] text-warm-gray">Max rate over loan life</div>
             </Card>
           )}
           {loan.arm_rate_floor && (
             <Card accent="var(--color-sage)">
               <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Rate Floor</div>
               <div className="text-2xl font-serif font-bold">{loan.arm_rate_floor}%</div>
-            </Card>
-          )}
-          {loan.arm_fixed_months && (
-            <Card>
-              <div className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-1">Fixed Period</div>
-              <div className="text-2xl font-serif font-bold">{loan.arm_fixed_months} mo</div>
+              <div className="text-[10px] text-warm-gray">Minimum rate allowed</div>
             </Card>
           )}
         </div>

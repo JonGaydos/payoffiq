@@ -22,6 +22,17 @@
   --danger: #dc3545;
   --success: #28a745;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  /* Chart color aliases (used by Recharts SVG) */
+  --color-cream: #faf8f5;
+  --color-ink: #2c2c2c;
+  --color-gold: #c9a84c;
+  --color-terracotta: #c45d3e;
+  --color-sage: #6b8f71;
+  --color-warm-gray: #a09890;
+  --color-card-bg: #ffffff;
+  --color-card-border: #e8e4df;
+  --color-danger: #dc3545;
+  --color-success: #28a745;
 }
 
 /* ===== Theme: Dark ===== */
@@ -44,6 +55,16 @@
   --danger: #ff6b6b;
   --success: #51cf66;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  --color-cream: #1a1a2e;
+  --color-ink: #e8e4df;
+  --color-gold: #d4af37;
+  --color-terracotta: #e07050;
+  --color-sage: #7dba84;
+  --color-warm-gray: #8a8580;
+  --color-card-bg: #222240;
+  --color-card-border: #333355;
+  --color-danger: #ff6b6b;
+  --color-success: #51cf66;
 }
 
 /* ===== Theme: Slate ===== */
@@ -66,6 +87,16 @@
   --danger: #ef4444;
   --success: #22c55e;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --color-cream: #f0f4f8;
+  --color-ink: #334155;
+  --color-gold: #6366f1;
+  --color-terracotta: #f43f5e;
+  --color-sage: #10b981;
+  --color-warm-gray: #94a3b8;
+  --color-card-bg: #ffffff;
+  --color-card-border: #e2e8f0;
+  --color-danger: #ef4444;
+  --color-success: #22c55e;
 }
 
 /* ===== Theme: Green & Red ===== */
@@ -88,6 +119,16 @@
   --danger: #dc2626;
   --success: #16a34a;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --color-cream: #f5f7f5;
+  --color-ink: #1a2e1a;
+  --color-gold: #2d6a2d;
+  --color-terracotta: #b91c1c;
+  --color-sage: #15803d;
+  --color-warm-gray: #6b7c6b;
+  --color-card-bg: #ffffff;
+  --color-card-border: #d4e4d4;
+  --color-danger: #dc2626;
+  --color-success: #16a34a;
 }
 
 /* ===== Theme: Midnight ===== */
@@ -110,6 +151,16 @@
   --danger: #f38ba8;
   --success: #a6e3a1;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  --color-cream: #1e1e2e;
+  --color-ink: #cdd6f4;
+  --color-gold: #f9e2af;
+  --color-terracotta: #f38ba8;
+  --color-sage: #a6e3a1;
+  --color-warm-gray: #6c7086;
+  --color-card-bg: #313244;
+  --color-card-border: #45475a;
+  --color-danger: #f38ba8;
+  --color-success: #a6e3a1;
 }
 
 /* ===== Theme: Forest ===== */
@@ -132,6 +183,16 @@
   --danger: #c0392b;
   --success: #27ae60;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --color-cream: #f5f0eb;
+  --color-ink: #2d3b2d;
+  --color-gold: #b8860b;
+  --color-terracotta: #a0522d;
+  --color-sage: #4a7c59;
+  --color-warm-gray: #8b8b7a;
+  --color-card-bg: #faf7f2;
+  --color-card-border: #d4cdc4;
+  --color-danger: #c0392b;
+  --color-success: #27ae60;
 }
 
 /* ===== Theme: Ocean ===== */
@@ -154,6 +215,16 @@
   --danger: #f87171;
   --success: #4ade80;
   --shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  --color-cream: #0f172a;
+  --color-ink: #e2e8f0;
+  --color-gold: #38bdf8;
+  --color-terracotta: #fb923c;
+  --color-sage: #34d399;
+  --color-warm-gray: #64748b;
+  --color-card-bg: #1e293b;
+  --color-card-border: #334155;
+  --color-danger: #f87171;
+  --color-success: #4ade80;
 }
 
 /* ===== Base Styles ===== */

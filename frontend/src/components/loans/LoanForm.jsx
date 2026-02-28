@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LOAN_TYPES } from '../../utils/constants';
 import Button from '../ui/Button';
 import Field from '../ui/Field';
@@ -16,6 +16,7 @@ export default function LoanForm({ loan, onSave, onCancel }) {
     estimated_value: loan?.estimated_value || '',
     currency: loan?.currency || 'USD',
     arm_fixed_months: loan?.arm_fixed_months || '',
+    arm_initial_cap: loan?.arm_initial_cap || '',
     arm_rate_cap: loan?.arm_rate_cap || '',
     arm_rate_floor: loan?.arm_rate_floor || '',
     arm_periodic_cap: loan?.arm_periodic_cap || '',
@@ -27,6 +28,29 @@ export default function LoanForm({ loan, onSave, onCancel }) {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
+  // Auto-calculate monthly payment when amount, rate, or term changes
+  const calcMonthlyPayment = (amount, rate, months) => {
+    const p = parseFloat(amount);
+    const r = parseFloat(rate) / 100 / 12;
+    const n = parseInt(months);
+    if (!p || !r || !n || p <= 0 || r <= 0 || n <= 0) return '';
+    const payment = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+    return payment.toFixed(2);
+  };
+
+  // Auto-fill monthly payment when relevant fields change (only if user hasn't manually entered one)
+  useEffect(() => {
+    if (loan?.monthly_payment) return; // Don't overwrite existing loan payment
+    const calc = calcMonthlyPayment(form.original_amount, form.interest_rate, form.loan_term_months);
+    if (calc && !form._manualPayment) {
+      setForm(prev => ({ ...prev, monthly_payment: calc }));
+    }
+  }, [form.original_amount, form.interest_rate, form.loan_term_months]);
+
+  const handlePaymentChange = (value) => {
+    setForm(prev => ({ ...prev, monthly_payment: value, _manualPayment: true }));
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.name || !form.original_amount || !form.interest_rate || !form.loan_term_months || !form.start_date || !form.monthly_payment) {
@@ -34,11 +58,14 @@ export default function LoanForm({ loan, onSave, onCancel }) {
       return;
     }
     setError('');
-    onSave(form);
+    // Don't send the internal _manualPayment flag
+    const { _manualPayment, ...data } = form;
+    onSave(data);
   };
 
   const selectedType = LOAN_TYPES.find(t => t.value === form.loan_type) || LOAN_TYPES[0];
   const isArm = form.loan_type === 'arm';
+  const autoCalc = calcMonthlyPayment(form.original_amount, form.interest_rate, form.loan_term_months);
 
   // Term presets
   const termPresets = [
@@ -137,11 +164,20 @@ export default function LoanForm({ loan, onSave, onCancel }) {
             type="number"
             step="0.01"
             className="input-field"
-            placeholder="1580.17"
+            placeholder={autoCalc || '1580.17'}
             value={form.monthly_payment}
-            onChange={e => handleChange('monthly_payment', e.target.value)}
+            onChange={e => handlePaymentChange(e.target.value)}
             required
           />
+          {autoCalc && (
+            <button
+              type="button"
+              onClick={() => setForm(prev => ({ ...prev, monthly_payment: autoCalc, _manualPayment: false }))}
+              className="text-[10px] text-gold hover:underline mt-0.5"
+            >
+              Auto-calculate: ${autoCalc}
+            </button>
+          )}
         </Field>
         <Field label="Current Balance">
           <input
@@ -174,8 +210,8 @@ export default function LoanForm({ loan, onSave, onCancel }) {
       {/* ARM-specific fields */}
       {isArm && (
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-2">ARM Details</h4>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-warm-gray mb-2">ARM Rate Caps</h4>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <Field label="Fixed Period (months)">
               <input
                 type="number"
@@ -184,26 +220,18 @@ export default function LoanForm({ loan, onSave, onCancel }) {
                 value={form.arm_fixed_months}
                 onChange={e => handleChange('arm_fixed_months', e.target.value)}
               />
+              <span className="text-[10px] text-warm-gray">Months before first adjustment</span>
             </Field>
-            <Field label="Rate Cap (%)">
+            <Field label="Initial Cap (%)">
               <input
                 type="number"
                 step="0.001"
                 className="input-field"
-                placeholder="e.g. 9.5"
-                value={form.arm_rate_cap}
-                onChange={e => handleChange('arm_rate_cap', e.target.value)}
+                placeholder="e.g. 2.0"
+                value={form.arm_initial_cap}
+                onChange={e => handleChange('arm_initial_cap', e.target.value)}
               />
-            </Field>
-            <Field label="Rate Floor (%)">
-              <input
-                type="number"
-                step="0.001"
-                className="input-field"
-                placeholder="e.g. 3.5"
-                value={form.arm_rate_floor}
-                onChange={e => handleChange('arm_rate_floor', e.target.value)}
-              />
+              <span className="text-[10px] text-warm-gray">Max change at first adjustment</span>
             </Field>
             <Field label="Periodic Cap (%)">
               <input
@@ -214,6 +242,29 @@ export default function LoanForm({ loan, onSave, onCancel }) {
                 value={form.arm_periodic_cap}
                 onChange={e => handleChange('arm_periodic_cap', e.target.value)}
               />
+              <span className="text-[10px] text-warm-gray">Max change per adjustment</span>
+            </Field>
+            <Field label="Lifetime Cap (%)">
+              <input
+                type="number"
+                step="0.001"
+                className="input-field"
+                placeholder="e.g. 9.5"
+                value={form.arm_rate_cap}
+                onChange={e => handleChange('arm_rate_cap', e.target.value)}
+              />
+              <span className="text-[10px] text-warm-gray">Max rate over loan life</span>
+            </Field>
+            <Field label="Rate Floor (%)">
+              <input
+                type="number"
+                step="0.001"
+                className="input-field"
+                placeholder="e.g. 3.5"
+                value={form.arm_rate_floor}
+                onChange={e => handleChange('arm_rate_floor', e.target.value)}
+              />
+              <span className="text-[10px] text-warm-gray">Minimum rate allowed</span>
             </Field>
           </div>
         </div>

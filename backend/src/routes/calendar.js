@@ -88,6 +88,66 @@ router.get('/', (req, res) => {
     }));
   } catch { /* table may not exist */ }
 
+  // Loan payments
+  try {
+    const payments = db.prepare(`
+      SELECT p.*, l.name as loan_name
+      FROM payments p
+      JOIN loans l ON p.loan_id = l.id
+      WHERE p.payment_date >= ? AND p.payment_date < ?
+      ORDER BY p.payment_date
+    `).all(startDate, endDate);
+
+    payments.forEach(p => events.push({
+      id: `pmt_${p.id}`,
+      title: `\u{1F4B5} ${p.loan_name} Payment`,
+      date: p.payment_date,
+      type: 'payment',
+      color: 'var(--color-sage)',
+      amount: p.total_payment,
+    }));
+  } catch { /* table may not exist */ }
+
+  // Credit card snapshots (payments made)
+  try {
+    const snapshots = db.prepare(`
+      SELECT s.*, c.name as card_name
+      FROM credit_card_snapshots s
+      JOIN credit_cards c ON s.card_id = c.id
+      WHERE s.snapshot_date >= ? AND s.snapshot_date < ? AND s.payment_made > 0
+      ORDER BY s.snapshot_date
+    `).all(startDate, endDate);
+
+    snapshots.forEach(s => events.push({
+      id: `ccpmt_${s.id}`,
+      title: `\u{1F4B3} ${s.card_name} Payment`,
+      date: s.snapshot_date,
+      type: 'cc_payment',
+      color: 'var(--color-gold)',
+      amount: s.payment_made,
+    }));
+  } catch { /* table may not exist */ }
+
+  // Insurance payments
+  try {
+    const insPmts = db.prepare(`
+      SELECT ip.*, ins.name as policy_name
+      FROM insurance_payments ip
+      JOIN insurance_policies ins ON ip.policy_id = ins.id
+      WHERE ip.payment_date >= ? AND ip.payment_date < ?
+      ORDER BY ip.payment_date
+    `).all(startDate, endDate);
+
+    insPmts.forEach(p => events.push({
+      id: `inspmt_${p.id}`,
+      title: `\u{1F6E1}\uFE0F ${p.policy_name} Premium`,
+      date: p.payment_date,
+      type: 'insurance_payment',
+      color: 'var(--color-gold)',
+      amount: p.amount,
+    }));
+  } catch { /* table may not exist */ }
+
   // Sort all events by date
   events.sort((a, b) => a.date.localeCompare(b.date));
 

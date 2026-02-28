@@ -5,9 +5,10 @@ import Field from '../ui/Field';
 const ICONS = ['💡', '⚡', '💧', '🔥', '📡', '📱', '🗑️', '🌐', '📺', '🏠', '🚗', '💳'];
 const CYCLES = [
   { value: 'monthly', label: 'Monthly' },
-  { value: 'quarterly', label: 'Quarterly' },
-  { value: 'annual', label: 'Annual' },
   { value: 'bimonthly', label: 'Bi-Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'semiannual', label: 'Every 6 Months' },
+  { value: 'annual', label: 'Annual' },
 ];
 
 export default function CategoryForm({ category, onSave, onCancel }) {

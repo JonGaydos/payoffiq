@@ -110,6 +110,7 @@ export default function Sidebar({ isOpen, onClose }) {
         {/* Household */}
         <NavGroup label="Household">
           <NavItem to="/bills" icon={'\u{1F4A1}'} label="Utilities" onClick={onClose} />
+          <NavItem to="/bills/add" icon={'\u{2795}'} label="Add Bill" onClick={onClose} />
           <NavItem to="/insurance" icon={'\u{1F6E1}\uFE0F'} label="Insurance" onClick={onClose} />
           <NavItem to="/maintenance" icon={'\u{1F527}'} label="Maintenance" onClick={onClose} />
         </NavGroup>

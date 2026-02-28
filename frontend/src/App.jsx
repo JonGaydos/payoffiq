@@ -28,6 +28,7 @@ import WhatIfPage from './pages/strategy/WhatIfPage';
 // Bill pages
 import BillsPage from './pages/bills/BillsPage';
 import BillDetailPage from './pages/bills/BillDetailPage';
+import AddBillPage from './pages/bills/AddBillPage';
 
 // Insurance pages
 import InsurancePage from './pages/insurance/InsurancePage';
@@ -102,6 +103,7 @@ function AppRoutes() {
 
         {/* Bill routes */}
         <Route path="bills" element={<BillsPage />} />
+        <Route path="bills/add" element={<AddBillPage />} />
         <Route path="bills/:categoryId" element={<BillDetailPage />} />
 
         {/* Insurance routes */}

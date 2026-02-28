@@ -29,6 +29,10 @@ export default function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [extracting, setExtracting] = useState(null);
   const [reviewDoc, setReviewDoc] = useState(null);
+  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [linkForm, setLinkForm] = useState({ title: '', url: '', category: 'general', notes: '' });
+  const [pushingToPaperless, setPushingToPaperless] = useState(null);
+  const [paperlessConfigured, setPaperlessConfigured] = useState(false);
   const fileRef = useRef();
 
   const loadDocs = async () => {
@@ -39,6 +43,16 @@ export default function DocumentsPage() {
   };
 
   useEffect(() => { loadDocs(); }, [filter]);
+
+  // Check if Paperless-NGX is configured
+  useEffect(() => {
+    authFetch(`${API_BASE}/settings`).then(async r => {
+      if (r.ok) {
+        const settings = await r.json();
+        setPaperlessConfigured(!!(settings.paperless_url && settings.paperless_api_key));
+      }
+    });
+  }, []);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
@@ -90,6 +104,31 @@ export default function DocumentsPage() {
     loadDocs();
   };
 
+  const handleLinkDocument = async () => {
+    if (!linkForm.title || !linkForm.url) return;
+    const res = await authFetch(`${API_BASE}/documents/link`, {
+      method: 'POST',
+      body: JSON.stringify(linkForm),
+    });
+    if (res.ok) {
+      setShowLinkForm(false);
+      setLinkForm({ title: '', url: '', category: 'general', notes: '' });
+      loadDocs();
+    }
+  };
+
+  const handlePushToPaperless = async (id) => {
+    setPushingToPaperless(id);
+    const res = await authFetch(`${API_BASE}/documents/${id}/push-to-paperless`, { method: 'POST' });
+    if (res.ok) {
+      alert('Document sent to Paperless-NGX!');
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(`Error: ${err.error || 'Failed to push to Paperless-NGX'}`);
+    }
+    setPushingToPaperless(null);
+  };
+
   if (loading) return <div className="text-warm-gray text-center py-12">Loading...</div>;
 
   return (
@@ -107,8 +146,39 @@ export default function DocumentsPage() {
           <Button onClick={() => fileRef.current?.click()} disabled={uploading}>
             {uploading ? 'Uploading...' : '+ Upload Document'}
           </Button>
+          <Button variant="outline" onClick={() => setShowLinkForm(!showLinkForm)}>
+            {showLinkForm ? 'Cancel' : '\u{1F517} Link URL'}
+          </Button>
         </div>
       </div>
+
+      {/* Link External Document Form */}
+      {showLinkForm && (
+        <Card accent="var(--color-gold)">
+          <h3 className="font-serif font-bold mb-3">Link External Document</h3>
+          <p className="text-xs text-warm-gray mb-4">Link to a Paperless-NGX document or any external URL.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Field label="Title *">
+              <input className="input-field" placeholder="Document name" value={linkForm.title} onChange={e => setLinkForm(f => ({ ...f, title: e.target.value }))} />
+            </Field>
+            <Field label="URL *">
+              <input className="input-field" placeholder="https://paperless.example.com/documents/123" value={linkForm.url} onChange={e => setLinkForm(f => ({ ...f, url: e.target.value }))} />
+            </Field>
+            <Field label="Category">
+              <select className="input-field" value={linkForm.category} onChange={e => setLinkForm(f => ({ ...f, category: e.target.value }))}>
+                {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Notes">
+              <input className="input-field" placeholder="Optional" value={linkForm.notes} onChange={e => setLinkForm(f => ({ ...f, notes: e.target.value }))} />
+            </Field>
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button onClick={handleLinkDocument}>Save Link</Button>
+            <Button variant="ghost" onClick={() => setShowLinkForm(false)}>Cancel</Button>
+          </div>
+        </Card>
+      )}
 
       {/* Filter bar */}
       <div className="flex gap-2 flex-wrap">
@@ -155,12 +225,18 @@ export default function DocumentsPage() {
           {docs.map(doc => {
             const extracted = doc.ai_extracted || {};
             const isImage = doc.mime_type?.startsWith('image/');
+            const isLink = doc.mime_type === 'application/link';
 
             return (
               <Card key={doc.id} className="relative">
                 {/* File preview area */}
                 <div className="bg-cream/30 rounded-lg p-4 mb-3 text-center min-h-[80px] flex items-center justify-center">
-                  {isImage ? (
+                  {isLink ? (
+                    <a href={doc.file_path} target="_blank" rel="noopener noreferrer" className="text-gold hover:underline flex flex-col items-center">
+                      <div className="text-3xl mb-1">{'\u{1F517}'}</div>
+                      <span className="text-xs truncate max-w-[200px]">{doc.file_path}</span>
+                    </a>
+                  ) : isImage ? (
                     <img
                       src={`${API_BASE.replace('/api', '')}/uploads/${doc.file_path?.split('uploads/')[1] || doc.filename}`}
                       alt={doc.original_name}
@@ -175,11 +251,12 @@ export default function DocumentsPage() {
                   {doc.original_name}
                 </h3>
                 <div className="text-xs text-warm-gray mt-1">
-                  {fmtDate(doc.uploaded_at)} {'\u2022'} {formatFileSize(doc.file_size)}
+                  {fmtDate(doc.uploaded_at)} {isLink ? '\u2022 External Link' : `\u2022 ${formatFileSize(doc.file_size)}`}
                 </div>
 
                 <div className="flex gap-1.5 mt-2 flex-wrap">
                   <Badge color={doc.category === 'general' ? 'gray' : 'orange'}>{doc.category}</Badge>
+                  {isLink && <Badge color="blue">Link</Badge>}
                   {doc.ai_confidence != null && (
                     <Badge color={doc.ai_confidence >= 80 ? 'green' : doc.ai_confidence >= 50 ? 'orange' : 'red'}>
                       AI: {doc.ai_confidence}%
@@ -197,8 +274,8 @@ export default function DocumentsPage() {
                 )}
 
                 {/* Actions */}
-                <div className="flex gap-1.5 mt-3">
-                  {!doc.ai_extracted?.biller && (
+                <div className="flex gap-1.5 mt-3 flex-wrap">
+                  {!isLink && !doc.ai_extracted?.biller && (
                     <Button
                       variant="sm"
                       className="border border-gold text-gold hover:bg-gold/10 flex-1"
@@ -207,6 +284,23 @@ export default function DocumentsPage() {
                     >
                       {extracting === doc.id ? 'Extracting...' : 'AI Extract'}
                     </Button>
+                  )}
+                  {!isLink && paperlessConfigured && (
+                    <Button
+                      variant="sm"
+                      className="border border-card-border text-warm-gray hover:border-sage hover:text-sage flex-1"
+                      onClick={() => handlePushToPaperless(doc.id)}
+                      disabled={pushingToPaperless === doc.id}
+                    >
+                      {pushingToPaperless === doc.id ? 'Sending...' : '\u{1F4E4} Paperless'}
+                    </Button>
+                  )}
+                  {isLink && (
+                    <a href={doc.file_path} target="_blank" rel="noopener noreferrer" className="flex-1">
+                      <Button variant="sm" className="border border-gold text-gold hover:bg-gold/10 w-full">
+                        Open Link
+                      </Button>
+                    </a>
                   )}
                   <Button
                     variant="sm"

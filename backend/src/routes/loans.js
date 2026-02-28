@@ -22,22 +22,25 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { name, loan_type, original_amount, interest_rate, loan_term_months, start_date,
     monthly_payment, current_balance, estimated_value, currency,
-    arm_fixed_months, arm_rate_cap, arm_rate_floor, arm_periodic_cap } = req.body;
+    arm_fixed_months, arm_rate_cap, arm_rate_floor, arm_periodic_cap, arm_initial_cap } = req.body;
 
   if (!name || !original_amount || !interest_rate || !loan_term_months || !start_date || !monthly_payment) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  // Handle empty string for current_balance — treat '' and null/undefined as "use original_amount"
+  const effectiveBalance = (current_balance === '' || current_balance == null) ? original_amount : current_balance;
+
   const result = db.prepare(`
     INSERT INTO loans (name, loan_type, original_amount, interest_rate, loan_term_months,
       start_date, monthly_payment, current_balance, estimated_value, currency,
-      arm_fixed_months, arm_rate_cap, arm_rate_floor, arm_periodic_cap)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      arm_fixed_months, arm_rate_cap, arm_rate_floor, arm_periodic_cap, arm_initial_cap)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name, loan_type || 'mortgage', original_amount, interest_rate, loan_term_months,
-    start_date, monthly_payment, current_balance ?? original_amount, estimated_value || null,
+    start_date, monthly_payment, effectiveBalance, estimated_value || null,
     currency || 'USD', arm_fixed_months || null, arm_rate_cap || null,
-    arm_rate_floor || null, arm_periodic_cap || null
+    arm_rate_floor || null, arm_periodic_cap || null, arm_initial_cap || null
   );
 
   const loan = db.prepare('SELECT * FROM loans WHERE id = ?').get(result.lastInsertRowid);
@@ -51,21 +54,27 @@ router.put('/:id', (req, res) => {
 
   const { name, loan_type, original_amount, interest_rate, loan_term_months, start_date,
     monthly_payment, current_balance, estimated_value, currency,
-    arm_fixed_months, arm_rate_cap, arm_rate_floor, arm_periodic_cap } = req.body;
+    arm_fixed_months, arm_rate_cap, arm_rate_floor, arm_periodic_cap, arm_initial_cap } = req.body;
+
+  // Handle empty string for current_balance
+  const effectiveBalance = (current_balance === '' || current_balance == null)
+    ? existing.current_balance
+    : current_balance;
 
   db.prepare(`
     UPDATE loans SET name=?, loan_type=?, original_amount=?, interest_rate=?, loan_term_months=?,
       start_date=?, monthly_payment=?, current_balance=?, estimated_value=?, currency=?,
-      arm_fixed_months=?, arm_rate_cap=?, arm_rate_floor=?, arm_periodic_cap=?
+      arm_fixed_months=?, arm_rate_cap=?, arm_rate_floor=?, arm_periodic_cap=?, arm_initial_cap=?
     WHERE id=?
   `).run(
     name ?? existing.name, loan_type ?? existing.loan_type,
     original_amount ?? existing.original_amount, interest_rate ?? existing.interest_rate,
     loan_term_months ?? existing.loan_term_months, start_date ?? existing.start_date,
-    monthly_payment ?? existing.monthly_payment, current_balance ?? existing.current_balance,
+    monthly_payment ?? existing.monthly_payment, effectiveBalance,
     estimated_value ?? existing.estimated_value, currency ?? existing.currency,
     arm_fixed_months ?? existing.arm_fixed_months, arm_rate_cap ?? existing.arm_rate_cap,
     arm_rate_floor ?? existing.arm_rate_floor, arm_periodic_cap ?? existing.arm_periodic_cap,
+    arm_initial_cap ?? existing.arm_initial_cap,
     req.params.id
   );
 

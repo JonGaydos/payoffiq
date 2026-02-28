@@ -30,6 +30,8 @@ export default function SettingsPage() {
   // Other settings
   const [paperlessUrl, setPaperlessUrl] = useState('');
   const [paperlessToken, setPaperlessToken] = useState('');
+  const [homeboxUrl, setHomeboxUrl] = useState('');
+  const [homeboxToken, setHomeboxToken] = useState('');
   const [autoLock, setAutoLock] = useState('');
   const [aiProvider, setAiProvider] = useState('claude');
 
@@ -40,6 +42,8 @@ export default function SettingsPage() {
       setSettings(data);
       setPaperlessUrl(data.paperless_ngx_url || '');
       setPaperlessToken(data.paperless_ngx_token ? '••••••••' : '');
+      setHomeboxUrl(data.homebox_url || '');
+      setHomeboxToken(data.homebox_token ? '••••••••' : '');
       setAutoLock(data.auto_lock_minutes || '');
       setAiProvider(data.ai_provider || 'claude');
 
@@ -127,6 +131,14 @@ export default function SettingsPage() {
     const obj = { paperless_ngx_url: paperlessUrl };
     if (!paperlessToken.includes('••••••••')) {
       obj.paperless_ngx_token = paperlessToken;
+    }
+    saveSettings(obj);
+  };
+
+  const handleSaveHomebox = () => {
+    const obj = { homebox_url: homeboxUrl };
+    if (!homeboxToken.includes('••••••••')) {
+      obj.homebox_token = homeboxToken;
     }
     saveSettings(obj);
   };
@@ -316,6 +328,47 @@ export default function SettingsPage() {
               className="inline-block mt-3 text-sm text-gold hover:underline"
             >
               Open Paperless-NGX {'\u2197'}
+            </a>
+          )}
+        </Card>
+
+        {/* HomeBox */}
+        <Card>
+          <h2 className="font-serif text-lg font-bold text-ink mb-4">HomeBox Integration</h2>
+          <p className="text-xs text-warm-gray mb-4">
+            Connect to your HomeBox instance for home inventory and maintenance tracking.
+          </p>
+          <div className="space-y-3 max-w-lg">
+            <Field label="HomeBox URL">
+              <input
+                type="url"
+                className="input-field"
+                value={homeboxUrl}
+                onChange={e => setHomeboxUrl(e.target.value)}
+                placeholder="https://homebox.yourdomain.com"
+              />
+            </Field>
+            <Field label="API Token">
+              <input
+                type="password"
+                className="input-field"
+                value={homeboxToken}
+                onChange={e => setHomeboxToken(e.target.value)}
+                placeholder="Enter HomeBox API token"
+              />
+            </Field>
+            <Button onClick={handleSaveHomebox} disabled={saving}>
+              Save HomeBox Settings
+            </Button>
+          </div>
+          {homeboxUrl && (
+            <a
+              href={homeboxUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block mt-3 text-sm text-gold hover:underline"
+            >
+              Open HomeBox {'\u2197'}
             </a>
           )}
         </Card>
