@@ -7,6 +7,15 @@ import LoginPage from './pages/LoginPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
+import ComingSoonPage from './pages/ComingSoonPage';
+
+// Loan pages
+import LoansManagerPage from './pages/loans/LoansManagerPage';
+import LoanDashboardPage, { LoanOverview } from './pages/loans/LoanDashboardPage';
+import PaymentsPage from './pages/loans/PaymentsPage';
+import CalculatorPage from './pages/loans/CalculatorPage';
+import EscrowPage from './pages/loans/EscrowPage';
+import ArmRatesPage from './pages/loans/ArmRatesPage';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -48,7 +57,25 @@ function AppRoutes() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        {/* Future phase routes will be added here */}
+
+        {/* Loan routes */}
+        <Route path="loans" element={<LoansManagerPage />} />
+        <Route path="loans/:loanId" element={<LoanDashboardPage />}>
+          <Route index element={<LoanOverview />} />
+          <Route path="payments" element={<PaymentsPage />} />
+          <Route path="calculator" element={<CalculatorPage />} />
+          <Route path="escrow" element={<EscrowPage />} />
+          <Route path="arm-rates" element={<ArmRatesPage />} />
+        </Route>
+
+        {/* Future phase placeholders */}
+        <Route path="credit-cards" element={<ComingSoonPage title="Credit Cards" phase={3} />} />
+        <Route path="strategy" element={<ComingSoonPage title="Debt Strategy" phase={4} />} />
+        <Route path="bills" element={<ComingSoonPage title="Utilities & Bills" phase={5} />} />
+        <Route path="insurance" element={<ComingSoonPage title="Insurance" phase={6} />} />
+        <Route path="documents" element={<ComingSoonPage title="Documents" phase={7} />} />
+        <Route path="maintenance" element={<ComingSoonPage title="Maintenance" phase={8} />} />
+        <Route path="calendar" element={<ComingSoonPage title="Calendar" phase={9} />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
