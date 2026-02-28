@@ -210,8 +210,10 @@ function DocumentUploader({loanId,paymentId,escrowItemId,billId,onUploaded,compa
 }
 
 // ─── DOCUMENT LIST ────────────────────────────────────────────────────────────
-function DocumentList({loanId,paymentId,escrowItemId,billId,refresh,onNavigateToPayment}){
+function DocumentList({loanId,paymentId,escrowItemId,billId,refresh,onNavigateToPayment,paperlessBaseUrl}){
   const [docs,setDocs]=useState([]);
+  const [editPaperless,setEditPaperless]=useState(null); // doc id being edited
+  const [paperlessInput,setPaperlessInput]=useState('');
   const load=useCallback(()=>{
     let url;
     if(billId)url=`${API}/bills/${billId}/documents`;
@@ -222,17 +224,42 @@ function DocumentList({loanId,paymentId,escrowItemId,billId,refresh,onNavigateTo
   },[loanId,paymentId,escrowItemId,billId]);
   useEffect(()=>{load();},[load,refresh]);
   const del=async(id)=>{if(!confirm('Remove this document?'))return;await authFetch(`${API}/documents/${id}`,{method:'DELETE'});load();};
+  const savePaperless=async(id)=>{
+    await authFetch(`${API}/documents/${id}`,{method:'PUT',body:JSON.stringify({paperless_url:paperlessInput||null})});
+    setEditPaperless(null);load();
+  };
   const icon=(name)=>/\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(name)?'🖼️':'📄';
   if(!docs.length)return null;
   return(
     <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:8}}>
       {docs.map(d=>(
-        <div key={d.id} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',background:'var(--surface)',borderRadius:6,fontSize:12}}>
-          <span>{icon(d.original_name)}</span>
-          <a href={`/statements/${d.filename}`} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.description||d.original_name}</a>
-          {d.payment_date&&onNavigateToPayment&&<button style={{background:'none',border:'1px solid var(--border)',borderRadius:4,fontSize:10,color:'var(--warm-gray)',cursor:'pointer',padding:'2px 6px',whiteSpace:'nowrap'}} onClick={()=>onNavigateToPayment(d.payment_id)}>→ Payment</button>}
-          <span style={{color:'var(--warm-gray)',fontSize:11}}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
-          <button onClick={()=>del(d.id)} style={{background:'none',border:'none',color:'var(--warm-gray)',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>
+        <div key={d.id} style={{padding:'6px 10px',background:'var(--surface)',borderRadius:6,fontSize:12}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span>{icon(d.original_name)}</span>
+            <a href={`/statements/${d.filename}`} target="_blank" rel="noreferrer" style={{color:'var(--gold)',textDecoration:'none',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.description||d.original_name}</a>
+            {/* Paperless link */}
+            {d.paperless_url
+              ?<a href={d.paperless_url} target="_blank" rel="noreferrer" style={{color:'var(--sage)',textDecoration:'none',whiteSpace:'nowrap',fontSize:11}}>🗂️ Paperless</a>
+              :paperlessBaseUrl&&<button onClick={()=>{setEditPaperless(d.id);setPaperlessInput('');}} style={{background:'none',border:'1px solid var(--border)',borderRadius:4,fontSize:10,color:'var(--warm-gray)',cursor:'pointer',padding:'2px 6px',whiteSpace:'nowrap'}}>+ Paperless link</button>
+            }
+            {d.payment_date&&onNavigateToPayment&&<button style={{background:'none',border:'1px solid var(--border)',borderRadius:4,fontSize:10,color:'var(--warm-gray)',cursor:'pointer',padding:'2px 6px',whiteSpace:'nowrap'}} onClick={()=>onNavigateToPayment(d.payment_id)}>→ Payment</button>}
+            <span style={{color:'var(--warm-gray)',fontSize:11}}>{new Date(d.uploaded_at).toLocaleDateString()}</span>
+            <button onClick={()=>del(d.id)} style={{background:'none',border:'none',color:'var(--warm-gray)',cursor:'pointer',fontSize:14,padding:'0 2px'}}>✕</button>
+          </div>
+          {/* Inline paperless URL editor */}
+          {editPaperless===d.id&&(
+            <div style={{display:'flex',gap:6,marginTop:6,alignItems:'center'}}>
+              <input style={{...s.input,fontSize:11,flex:1,padding:'5px 8px'}} value={paperlessInput} onChange={e=>setPaperlessInput(e.target.value)} placeholder="Paste Paperless document URL…" autoFocus onKeyDown={e=>{if(e.key==='Enter')savePaperless(d.id);if(e.key==='Escape')setEditPaperless(null);}}/>
+              <button style={{...s.btn('sm')}} onClick={()=>savePaperless(d.id)}>Save</button>
+              <button style={{...s.btn('ghost'),fontSize:11,padding:'4px 8px'}} onClick={()=>setEditPaperless(null)}>Cancel</button>
+            </div>
+          )}
+          {/* Edit existing paperless link */}
+          {d.paperless_url&&editPaperless!==d.id&&(
+            <div style={{marginTop:4}}>
+              <button onClick={()=>{setEditPaperless(d.id);setPaperlessInput(d.paperless_url);}} style={{background:'none',border:'none',fontSize:11,color:'var(--warm-gray)',cursor:'pointer',padding:0,textDecoration:'underline'}}>edit paperless link</button>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -835,7 +862,12 @@ function BillsView({initialCatId}){
   };
 
   const usePreset=(preset)=>{
-    setCatForm(f=>({...f,name:preset.name,icon:preset.icon,color:preset.color,custom_fields:[...preset.custom_fields]}));
+    setCatForm(f=>{
+      // Merge: keep any user-added fields not in preset, then add preset fields
+      const existingKeys=new Set(preset.custom_fields.map(x=>x.key));
+      const userExtra=f.custom_fields.filter(x=>!existingKeys.has(x.key));
+      return {...f,name:f.name||preset.name,icon:preset.icon,color:preset.color,custom_fields:[...preset.custom_fields,...userExtra]};
+    });
     setActivePreset(preset.name);
   };
 
