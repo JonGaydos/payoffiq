@@ -10,6 +10,7 @@ import armRateRoutes from './routes/arm-rates.js';
 import escrowRoutes from './routes/escrow.js';
 import analyticsRoutes from './routes/analytics.js';
 import calculatorRoutes from './routes/calculator.js';
+import creditCardRoutes from './routes/credit-cards.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -32,6 +33,7 @@ app.use('/api/arm-rates', armRateRoutes);
 app.use('/api/escrow', escrowRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/calculator', calculatorRoutes);
+app.use('/api/credit-cards', creditCardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

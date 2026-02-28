@@ -17,6 +17,10 @@ import CalculatorPage from './pages/loans/CalculatorPage';
 import EscrowPage from './pages/loans/EscrowPage';
 import ArmRatesPage from './pages/loans/ArmRatesPage';
 
+// Credit card pages
+import CreditCardsPage from './pages/credit-cards/CreditCardsPage';
+import CardDetailPage from './pages/credit-cards/CardDetailPage';
+
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuth();
   if (isLoading) {
@@ -68,8 +72,11 @@ function AppRoutes() {
           <Route path="arm-rates" element={<ArmRatesPage />} />
         </Route>
 
+        {/* Credit card routes */}
+        <Route path="credit-cards" element={<CreditCardsPage />} />
+        <Route path="credit-cards/:cardId" element={<CardDetailPage />} />
+
         {/* Future phase placeholders */}
-        <Route path="credit-cards" element={<ComingSoonPage title="Credit Cards" phase={3} />} />
         <Route path="strategy" element={<ComingSoonPage title="Debt Strategy" phase={4} />} />
         <Route path="bills" element={<ComingSoonPage title="Utilities & Bills" phase={5} />} />
         <Route path="insurance" element={<ComingSoonPage title="Insurance" phase={6} />} />
